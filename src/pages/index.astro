@@ -1059,3 +1059,97 @@
     .device-row { align-items: stretch; flex-direction: column; }
   }
 </style>
+<style is:global>
+  .plant-tile {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 17px;
+    width: 100%;
+    min-height: 132px;
+    padding: 23px;
+    overflow: hidden;
+    border: 1px solid #e1e9dd;
+    border-radius: 22px;
+    background: linear-gradient(135deg, #fff 0%, #f8fbf5 100%);
+    color: #203629;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+    box-shadow: 0 10px 28px #26462b0c;
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }
+
+  .plant-tile::before {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 6px;
+    background: #8db583;
+    content: "";
+  }
+
+  .plant-tile:hover,
+  .plant-tile:focus-visible {
+    transform: translateY(-3px);
+    border-color: #9dbb96;
+    box-shadow: 0 16px 35px #26462b17;
+  }
+
+  .plant-tile:focus-visible {
+    outline: 3px solid #75a66e;
+    outline-offset: 3px;
+  }
+
+  .tile-icon {
+    display: grid;
+    flex: 0 0 58px;
+    width: 58px;
+    height: 58px;
+    place-items: center;
+    border-radius: 18px;
+    background: #eaf3e5;
+    font-size: 31px;
+  }
+
+  .tile-info {
+    display: grid;
+    flex: 1;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .tile-info strong { font-size: 19px; }
+  .tile-info small, .tile-summary { color: #718074; overflow-wrap: anywhere; }
+  .tile-summary { font-size: 12px; }
+
+  .tile-status, .status {
+    padding: 9px 12px;
+    border-radius: 99px;
+    background: #e9f5e7;
+    color: #347044;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .tile-status.achtung, .status.achtung {
+    background: #fff2d9;
+    color: #8a5a00;
+  }
+
+  .tile-status.kritisch, .status.kritisch {
+    background: #c83131;
+    color: white;
+  }
+
+  .tile-arrow {
+    color: #78917b;
+    font-size: 30px;
+    line-height: 1;
+  }
+
+  @media (max-width: 460px) {
+    .plant-tile { flex-wrap: wrap; padding: 18px; }
+    .tile-status { margin-left: 74px; }
+  }
+</style>
