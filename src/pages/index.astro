@@ -76,16 +76,18 @@
           <input id="new-name" name="name" placeholder="z. B. Kaktus in der Küche" required maxlength="60" />
 
           <label for="new-plant">Pflanzenart</label>
-          <input id="new-plant" name="plant" placeholder="z. B. Schwiegermuttersitz" maxlength="60" />
+          <select id="new-plant" name="species_id" required>
+            <option value="">Pflanzenarten werden geladen …</option>
+          </select>
 
           <label for="new-device">Geräte-ID</label>
           <div class="device-row">
-            <input id="new-device" name="device" placeholder="QR-Code scannen oder ID eingeben" required maxlength="100" />
+            <input id="new-device" name="device" placeholder="QR-Code scannen oder ID eingeben" required maxlength="200" />
             <button id="scan-button" class="button secondary" type="button">QR-Code scannen</button>
           </div>
 
           <video id="qr-video" playsinline muted hidden></video>
-          <p id="form-message" class="form-message">Scanne den QR-Code am Topf oder gib die Geräte-ID ein.</p>
+          <p id="form-message" class="form-message">Scanne den QR-Code am Sensor oder gib die Geräte-ID ein.</p>
           <button id="save-pot" class="button save-button" type="submit">Topf speichern</button>
         </form>
       </dialog>
@@ -94,26 +96,26 @@
     </main>
 
     <script>
-      // Dieser Publishable Key ist für die Verwendung im Browser vorgesehen.
-      // Niemals einen service_role- oder Secret-Key hier eintragen.
       const SUPABASE_URL = "https://dzvzbvylebefxdhosisi.supabase.co";
       const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_GC1g6g1Wl4V18vX44-9fMw_LHisOABS";
 
-      // Die View wird zum Laden der vorhandenen Pflanzentöpfe verwendet.
       const VIEW_NAME = "v_base_station";
-
-      // Der richtige Tabellennamen für neue Einträge muss in Supabase geprüft werden.
+      const SPECIES_TABLE = "plant_species";
       const POT_TABLE = "pots";
 
       const $ = (selector) => document.querySelector(selector);
+
       let plants = [];
       let selectedPlant = null;
+      let species = [];
       let cameraStream = null;
       let scannerControls = null;
       let scanActive = false;
+      let scannedQrText = "";
 
       function updateDate() {
         const now = new Date();
+
         $("#today").textContent = now.toLocaleDateString("de-DE", {
           weekday: "long",
           year: "numeric",
@@ -132,8 +134,8 @@
 
       function asNumber(value) {
         if (value === null || value === undefined || value === "") return null;
-        const result = Number(value);
-        return Number.isFinite(result) ? result : null;
+        const number = Number(value);
+        return Number.isFinite(number) ? number : null;
       }
 
       function getSeasonRanges(plant) {
@@ -234,7 +236,7 @@
           const soil = asNumber(plant.soil_moisture);
 
           summary.textContent =
-            `Temperatur ${temperature === null ? "—" : `${temperature.toFixed(1)} °C`} · Bodenfeuchte ${soil === null ? "—" : `${soil}%`}`;
+            `Temperatur ${temperature === null ? "—" : `${temperature.toFixed(1)} °C`} · Bodenfeuchtigkeit ${soil === null ? "—" : `${soil}%`}`;
 
           info.append(name, pot, summary);
 
@@ -255,6 +257,61 @@
           card.addEventListener("click", () => showPlant(index));
           list.append(card);
         });
+      }
+
+      function populateSpeciesDropdown() {
+        const select = $("#new-plant");
+        const currentValue = select.value;
+
+        select.replaceChildren();
+
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = species.length
+          ? "Pflanzenart auswählen"
+          : "Keine Pflanzenarten gefunden";
+        select.append(placeholder);
+
+        species.forEach((item) => {
+          const option = document.createElement("option");
+          option.value = String(item.id);
+          option.textContent = item.name_de || item.name_lat || `Pflanzenart ${item.id}`;
+          select.append(option);
+        });
+
+        if (species.some((item) => String(item.id) === currentValue)) {
+          select.value = currentValue;
+        }
+      }
+
+      async function loadSpecies() {
+        const select = $("#new-plant");
+        select.innerHTML = '<option value="">Pflanzenarten werden geladen …</option>';
+
+        try {
+          const response = await fetch(
+            `${SUPABASE_URL}/rest/v1/${SPECIES_TABLE}?select=id,name_de,name_lat&order=name_de.asc`,
+            { headers: { apikey: SUPABASE_PUBLISHABLE_KEY } }
+          );
+
+          if (!response.ok) {
+            throw new Error(`${response.status}: ${await response.text()}`);
+          }
+
+          species = await response.json();
+          populateSpeciesDropdown();
+
+          if (!species.length) {
+            $("#form-message").textContent =
+              "In plant_species wurden keine Pflanzenarten gefunden.";
+          }
+        } catch (error) {
+          console.error(error);
+          species = [];
+          select.innerHTML = '<option value="">Pflanzenarten konnten nicht geladen werden</option>';
+          $("#form-message").textContent =
+            `Pflanzenarten konnten nicht geladen werden: ${error.message}`;
+        }
       }
 
       function addReading(label, rawValue, unit, rawLow, rawHigh, decimals = 0) {
@@ -343,16 +400,15 @@
         if (!selectedPlant) return;
 
         const state = getHealth(selectedPlant);
+
         $("#home-screen").hidden = true;
         $("#detail-screen").hidden = false;
-
-        $("#plant-name").textContent =
-          selectedPlant.pflanze || selectedPlant.name || "Pflanze";
-        $("#pot-name").textContent =
-          selectedPlant.name ? `Topf: ${selectedPlant.name}` : "";
+        $("#plant-name").textContent = selectedPlant.pflanze || selectedPlant.name || "Pflanze";
+        $("#pot-name").textContent = selectedPlant.name ? `Topf: ${selectedPlant.name}` : "";
 
         const badge = $("#plant-status");
         badge.className = `status ${state}`;
+
         setAlertBadge(
           badge,
           state === "kritisch" ? "KRITISCH" :
@@ -399,12 +455,10 @@
         updateDate();
 
         try {
-          const endpoint =
-            `${SUPABASE_URL}/rest/v1/${VIEW_NAME}?select=*&order=name.asc`;
-
-          const response = await fetch(endpoint, {
-            headers: { apikey: SUPABASE_PUBLISHABLE_KEY }
-          });
+          const response = await fetch(
+            `${SUPABASE_URL}/rest/v1/${VIEW_NAME}?select=*&order=name.asc`,
+            { headers: { apikey: SUPABASE_PUBLISHABLE_KEY } }
+          );
 
           if (!response.ok) {
             throw new Error(`${response.status}: ${await response.text()}`);
@@ -430,7 +484,10 @@
 
       const dialog = $("#add-dialog");
 
-      $("#add-open").addEventListener("click", () => dialog.showModal());
+      $("#add-open").addEventListener("click", async () => {
+        dialog.showModal();
+        await loadSpecies();
+      });
 
       $("#close-dialog").addEventListener("click", () => {
         stopScanner();
@@ -494,7 +551,8 @@
             const codes = await detector.detect(video);
 
             if (codes.length) {
-              $("#new-device").value = deviceIdFromQr(codes[0].rawValue);
+              scannedQrText = String(codes[0].rawValue || "").trim();
+              $("#new-device").value = deviceIdFromQr(scannedQrText);
               $("#form-message").textContent =
                 "QR-Code erkannt. Geräte-ID wurde eingetragen.";
               stopScanner();
@@ -529,7 +587,8 @@
           video,
           (result, error) => {
             if (result && scanActive) {
-              $("#new-device").value = deviceIdFromQr(result.getText());
+              scannedQrText = String(result.getText() || "").trim();
+              $("#new-device").value = deviceIdFromQr(scannedQrText);
               $("#form-message").textContent =
                 "QR-Code erkannt. Geräte-ID wurde eingetragen.";
               stopScanner();
@@ -550,7 +609,7 @@
 
         if (!navigator.mediaDevices?.getUserMedia) {
           $("#form-message").textContent =
-            "Kamerazugriff ist hier nicht verfügbar. Öffne die Website über HTTPS oder gib die Geräte-ID manuell ein.";
+            "Kamerazugriff ist nicht verfügbar. Öffne die Website über HTTPS oder gib die Geräte-ID manuell ein.";
           return;
         }
 
@@ -565,15 +624,19 @@
           }
 
           $("#form-message").textContent =
-            "Richte die Kamera auf den QR-Code am Pflanzentopf.";
+            "Richte die Kamera auf den QR-Code am Sensor.";
         } catch (error) {
           console.error(error);
           stopScanner();
           $("#form-message").textContent =
-            "QR-Scanner konnte nicht gestartet werden. Erlaube den Kamerazugriff, prüfe HTTPS oder gib die Geräte-ID manuell ein.";
+            "QR-Scanner konnte nicht gestartet werden. Erlaube den Kamerazugriff oder gib die Geräte-ID manuell ein.";
         } finally {
           button.disabled = false;
         }
+      });
+
+      $("#new-device").addEventListener("input", () => {
+        scannedQrText = "";
       });
 
       $("#add-form").addEventListener("submit", async (event) => {
@@ -582,11 +645,12 @@
         const saveButton = $("#save-pot");
         const message = $("#form-message");
         const name = $("#new-name").value.trim();
-        const plant = $("#new-plant").value.trim();
+        const speciesId = $("#new-plant").value;
         const deviceId = $("#new-device").value.trim();
 
-        if (!name || !deviceId) {
-          message.textContent = "Bitte gib einen Topfnamen und eine Geräte-ID ein.";
+        if (!name || !speciesId || !deviceId) {
+          message.textContent =
+            "Bitte gib einen Topfnamen, eine Pflanzenart und eine Geräte-ID ein.";
           return;
         }
 
@@ -594,6 +658,8 @@
         message.textContent = "Topf wird gespeichert …";
 
         try {
+          const qrCode = scannedQrText || deviceId;
+
           const response = await fetch(`${SUPABASE_URL}/rest/v1/${POT_TABLE}`, {
             method: "POST",
             headers: {
@@ -603,20 +669,22 @@
             },
             body: JSON.stringify({
               name,
+              species_id: Number(speciesId),
               device_id: deviceId,
-              pflanze: plant || null
+              qr_code: qrCode
             })
           });
 
           if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`${response.status}: ${errorText}`);
+            throw new Error(`${response.status}: ${await response.text()}`);
           }
 
           stopScanner();
           $("#add-form").reset();
+          scannedQrText = "";
           dialog.close();
-          await loadPlants();
+
+          await Promise.all([loadPlants(), loadSpecies()]);
 
           $("#home-screen").hidden = false;
           $("#detail-screen").hidden = true;
@@ -640,6 +708,7 @@
       });
 
       loadPlants();
+      loadSpecies();
       setInterval(loadPlants, 60000);
     </script>
   </body>
@@ -657,7 +726,7 @@
     font-family: system-ui, sans-serif;
   }
 
-  :global(button), :global(input) { font: inherit; }
+  :global(button), :global(input), :global(select) { font: inherit; }
   [hidden] { display: none !important; }
   main { max-width: 1080px; margin: 0 auto; }
 
@@ -935,7 +1004,7 @@
 
   form > label { display: block; margin: 14px 0 7px; font-weight: 700; }
 
-  form input {
+  form input, form select {
     width: 100%;
     padding: 12px;
     border: 1px solid #ccd8ca;
@@ -944,7 +1013,7 @@
     color: #203629;
   }
 
-  form input:focus {
+  form input:focus, form select:focus {
     outline: 3px solid #9dcc914c;
     border-color: #75a66e;
   }
