@@ -55,6 +55,25 @@
             <span id="plant-status" class="status">—</span>
           </div>
 
+          <section class="health-score" aria-label="Plant health score">
+            <div class="health-score-heading">
+              <span>Health score</span>
+              <strong id="health-score-value">— / 100</strong>
+            </div>
+            <div
+              id="health-score-track"
+              class="health-score-track"
+              role="progressbar"
+              aria-label="Health score"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+            >
+              <div id="health-score-fill"></div>
+            </div>
+            <p id="health-score-note" class="score-note"></p>
+          </section>
+
           <p id="detail-message" class="message"></p>
           <div id="readings" class="readings"></div>
 
@@ -147,7 +166,7 @@
         </form>
       </dialog>
 
-      <p class="small-note">Die Messwerte werden automatisch aktualisiert.</p>
+      <p class="small-note">Die Messwerte und der gemeinsame Health score werden regelmäßig aktualisiert.</p>
     </main>
 
     <script>
@@ -157,6 +176,7 @@
       const VIEW_NAME = "v_base_station";
       const SPECIES_TABLE = "plant_species";
       const POT_TABLE = "pots";
+      const HEALTH_SCORE_RPC = "get_plant_health_score";
 
       const $ = (selector) => document.querySelector(selector);
 
@@ -181,11 +201,17 @@
           day: "numeric"
         });
 
-        const month = now.getMonth();
+        const month = Number(
+          new Intl.DateTimeFormat("en", {
+            month: "numeric",
+            timeZone: "Europe/Berlin"
+          }).format(now)
+        );
+
         const season =
-          month >= 2 && month <= 4 ? "Frühling" :
-          month >= 5 && month <= 7 ? "Sommer" :
-          month >= 8 && month <= 10 ? "Herbst" : "Winter";
+          month >= 3 && month <= 5 ? "Frühling" :
+          month >= 6 && month <= 8 ? "Sommer" :
+          month >= 9 && month <= 11 ? "Herbst" : "Winter";
 
         $("#season").textContent = `Jahreszeit: ${season}`;
       }
@@ -197,7 +223,12 @@
       }
 
       function getSeasonRanges(plant) {
-        const month = new Date().getMonth() + 1;
+        const month = Number(
+          new Intl.DateTimeFormat("en", {
+            month: "numeric",
+            timeZone: "Europe/Berlin"
+          }).format(new Date())
+        );
         const winter = month >= 11 || month <= 3;
 
         return {
@@ -209,34 +240,12 @@
       }
 
       function getHealth(plant) {
-        const ranges = getSeasonRanges(plant);
-        const checks = [
-          [plant.temperature, ranges.tempMin, ranges.tempMax, false],
-          [plant.humidity, plant.humidity_min, plant.humidity_max, false],
-          [plant.light, plant.light_min, plant.light_max, false],
-          [plant.soil_moisture, ranges.soilMin, ranges.soilMax, true]
-        ];
+        const score = plant?.health_score;
 
-        let warning = false;
-
-        for (const [rawValue, rawLow, rawHigh, isSoil] of checks) {
-          const value = asNumber(rawValue);
-          const low = asNumber(rawLow);
-          const high = asNumber(rawHigh);
-
-          if (value === null || low === null || high === null || high <= low) continue;
-
-          if (value < low || value > high) {
-            warning = true;
-            const deviation = value < low ? low - value : value - high;
-
-            if ((isSoil && value < low) || deviation > 0.2 * (high - low)) {
-              return "kritisch";
-            }
-          }
-        }
-
-        return warning ? "achtung" : "gut";
+        if (!Number.isInteger(score)) return "nodata";
+        if (score === 0) return "kritisch";
+        if (score < 100) return "achtung";
+        return "gut";
       }
 
       function setAlertBadge(element, label, critical) {
@@ -252,6 +261,39 @@
         }
 
         element.append(document.createTextNode(label));
+      }
+
+      async function fetchHealthScore(deviceId) {
+        if (!deviceId) return null;
+
+        try {
+          const response = await fetch(
+            `${SUPABASE_URL}/rest/v1/rpc/${HEALTH_SCORE_RPC}`,
+            {
+              method: "POST",
+              headers: {
+                apikey: SUPABASE_PUBLISHABLE_KEY,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ p_device_id: deviceId })
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error(`${response.status}: ${await response.text()}`);
+          }
+
+          const result = await response.json();
+          const rawScore = result?.[0]?.score;
+
+          if (rawScore === null || rawScore === undefined) return null;
+
+          const score = Number(rawScore);
+          return Number.isInteger(score) && score >= 0 && score <= 100 ? score : null;
+        } catch (error) {
+          console.error(`Could not load health score for ${deviceId}:`, error);
+          return null;
+        }
       }
 
       function renderHome() {
@@ -287,12 +329,11 @@
           const potName = document.createElement("small");
           potName.textContent = plant.name ? `Topf: ${plant.name}` : "Pflanzentopf";
 
-          const summary = document.createElement("span");
-          summary.className = "tile-summary";
-
           const temperature = asNumber(plant.temperature);
           const soil = asNumber(plant.soil_moisture);
 
+          const summary = document.createElement("span");
+          summary.className = "tile-summary";
           summary.textContent =
             `Temperatur ${temperature === null ? "—" : `${temperature.toFixed(1)} °C`} · Bodenfeuchtigkeit ${soil === null ? "—" : `${soil}%`}`;
 
@@ -300,18 +341,26 @@
 
           const badge = document.createElement("span");
           badge.className = `tile-status ${state}`;
-          setAlertBadge(
-            badge,
-            state === "kritisch" ? "Kritisch" : state === "achtung" ? "Prüfen" : "Alles gut",
-            state === "kritisch"
-          );
+
+          const statusLabel =
+            state === "kritisch" ? "Kritisch" :
+            state === "achtung" ? "Prüfen" :
+            state === "nodata" ? "Keine Daten" : "Alles gut";
+
+          setAlertBadge(badge, statusLabel, state === "kritisch");
+
+          const score = document.createElement("span");
+          score.className = "tile-score";
+          score.textContent = Number.isInteger(plant.health_score)
+            ? `${plant.health_score} / 100`
+            : "— / 100";
 
           const arrow = document.createElement("span");
           arrow.className = "tile-arrow";
           arrow.textContent = "›";
           arrow.setAttribute("aria-hidden", "true");
 
-          card.append(icon, info, badge, arrow);
+          card.append(icon, info, score, badge, arrow);
           card.addEventListener("click", () => showPlant(index));
           list.append(card);
         });
@@ -370,6 +419,31 @@
           $("#form-message").textContent =
             `Pflanzenarten konnten nicht geladen werden: ${error.message}`;
         }
+      }
+
+      function renderHealthScore(plant) {
+        const score = plant?.health_score;
+        const value = $("#health-score-value");
+        const fill = $("#health-score-fill");
+        const track = $("#health-score-track");
+        const note = $("#health-score-note");
+
+        if (!Number.isInteger(score)) {
+          value.textContent = "— / 100";
+          fill.style.width = "0%";
+          track.setAttribute("aria-valuenow", "0");
+          note.textContent = "Kein aktueller Score verfügbar.";
+          return;
+        }
+
+        value.textContent = `${score} / 100`;
+        fill.style.width = `${score}%`;
+        track.setAttribute("aria-valuenow", String(score));
+
+        note.textContent =
+          score === 0 ? "Kritischer Wert" :
+          score < 100 ? "Mindestens ein Messwert liegt außerhalb des Zielbereichs." :
+          "Alle berücksichtigten Messwerte liegen im Zielbereich.";
       }
 
       function addReading(label, rawValue, unit, rawLow, rawHigh, decimals = 0) {
@@ -469,14 +543,15 @@
         const badge = $("#plant-status");
         badge.className = `status ${state}`;
 
-        setAlertBadge(
-          badge,
+        const label =
           state === "kritisch" ? "KRITISCH" :
-            state === "achtung" ? "PFLANZE PRÜFEN" : "ALLES GUT",
-          state === "kritisch"
-        );
+          state === "achtung" ? "PFLANZE PRÜFEN" :
+          state === "nodata" ? "KEINE DATEN" : "ALLES GUT";
 
+        setAlertBadge(badge, label, state === "kritisch");
         $("#detail-card").classList.toggle("critical", state === "kritisch");
+
+        renderHealthScore(selectedPlant);
 
         const age = asNumber(selectedPlant.age_min);
 
@@ -494,10 +569,35 @@
         const ranges = getSeasonRanges(selectedPlant);
         $("#readings").replaceChildren();
 
-        addReading("Temperatur", selectedPlant.temperature, "°C", ranges.tempMin, ranges.tempMax, 1);
-        addReading("Luftfeuchtigkeit", selectedPlant.humidity, "%", selectedPlant.humidity_min, selectedPlant.humidity_max);
-        addReading("Licht", selectedPlant.light, "lx", selectedPlant.light_min, selectedPlant.light_max);
-        addReading("Bodenfeuchtigkeit", selectedPlant.soil_moisture, "%", ranges.soilMin, ranges.soilMax);
+        addReading(
+          "Temperatur",
+          selectedPlant.temperature,
+          "°C",
+          ranges.tempMin,
+          ranges.tempMax,
+          1
+        );
+        addReading(
+          "Luftfeuchtigkeit",
+          selectedPlant.humidity,
+          "%",
+          selectedPlant.humidity_min,
+          selectedPlant.humidity_max
+        );
+        addReading(
+          "Licht",
+          selectedPlant.light,
+          "lx",
+          selectedPlant.light_min,
+          selectedPlant.light_max
+        );
+        addReading(
+          "Bodenfeuchtigkeit",
+          selectedPlant.soil_moisture,
+          "%",
+          ranges.soilMin,
+          ranges.soilMax
+        );
 
         $("#detail-message").textContent =
           age !== null && age > 180
@@ -524,7 +624,15 @@
             throw new Error(`${response.status}: ${await response.text()}`);
           }
 
-          plants = await response.json();
+          const rows = await response.json();
+
+          plants = await Promise.all(
+            rows.map(async (plant) => ({
+              ...plant,
+              health_score: await fetchHealthScore(plant.device_id)
+            }))
+          );
+
           renderHome();
 
           if (selectedPlant && !$("#detail-screen").hidden) {
@@ -922,7 +1030,7 @@
         position: relative;
         display: flex;
         align-items: center;
-        gap: 17px;
+        gap: 14px;
         width: 100%;
         min-height: 132px;
         padding: 23px;
@@ -974,6 +1082,13 @@
       .tile-info small, .tile-summary { color: #718074; overflow-wrap: anywhere; }
       .tile-summary { font-size: 12px; }
 
+      .tile-score {
+        color: #315f40;
+        font-size: 13px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
       .tile-status, .status {
         padding: 9px 12px;
         border-radius: 99px;
@@ -992,6 +1107,11 @@
       .tile-status.kritisch, .status.kritisch {
         background: #c83131;
         color: white;
+      }
+
+      .tile-status.nodata, .status.nodata {
+        background: #e9ece8;
+        color: #59645b;
       }
 
       .tile-arrow { color: #78917b; font-size: 30px; line-height: 1; }
@@ -1013,6 +1133,7 @@
       }
 
       .detail-actions { margin-bottom: 15px; }
+
       .back-button {
         padding: 8px 0;
         border: 0;
@@ -1046,6 +1167,51 @@
 
       .detail-card.critical { animation: critical-blink 1s infinite; }
       .plant-head { padding-bottom: 23px; border-bottom: 1px solid #e8eee5; }
+
+      .health-score {
+        margin: 20px 0;
+        padding: 20px;
+        border: 1px solid #e2eadf;
+        border-radius: 19px;
+        background: #f8faf6;
+      }
+
+      .health-score-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 13px;
+        color: #54715c;
+        font-weight: 700;
+      }
+
+      .health-score-heading strong {
+        color: #203629;
+        font-size: 25px;
+      }
+
+      .health-score-track {
+        height: 16px;
+        overflow: hidden;
+        border: 1px solid #bbc9b8;
+        border-radius: 99px;
+        background: white;
+      }
+
+      .health-score-track > div {
+        height: 100%;
+        width: 0;
+        border-radius: inherit;
+        background: #38734e;
+        transition: width .25s ease;
+      }
+
+      .score-note {
+        margin-top: 9px;
+        color: #718074;
+        font-size: 13px;
+      }
 
       .readings {
         display: grid;
@@ -1198,6 +1364,10 @@
         .date-box { text-align: left; }
         .plant-list, .readings { grid-template-columns: 1fr; }
         .detail-card { padding: 22px; }
+      }
+
+      @media (max-width: 520px) {
+        .tile-score { flex: 1 0 100%; margin-left: 74px; }
       }
 
       @media (max-width: 460px) {
