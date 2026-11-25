@@ -12,3 +12,11 @@
 	},
 	"upload_source_maps": true
 }
+{
+  // ...
+  "vars": {
+    "PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_GC1g6g1Wl4V18vX44-9fMw_LHisOABS",
+    "PUBLIC_SUPABASE_URL": "https://dzvzbvylebefxdhosisi.supabase.co"
+  },
+  // ...
+}
