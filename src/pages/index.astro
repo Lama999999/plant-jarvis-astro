@@ -1,12 +1,5 @@
 ---
-const readings = [
-  { label: "Temperature", value: "22.4 °C", range: "Target: 18–26 °C", percent: 55 },
-  { label: "Air humidity", value: "58%", range: "Target: 40–70%", percent: 60 },
-  { label: "Light", value: "1,240 lx", range: "Target: 800–2,000 lx", percent: 48 },
-  { label: "Soil moisture", value: "42%", range: "Target: 30–60%", percent: 40 },
-];
 ---
-
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -16,58 +9,234 @@ const readings = [
   <body>
     <main>
       <header>
-        <div class="brand"><span class="leaf">🌿</span><div><h1>PlantJarvis</h1><p>Your plants, happily monitored</p></div></div>
-        <div class="date">🌼 Spring · 25 November 2026</div>
+        <div class="brand">🌿 <div><h1>PlantJarvis</h1><p>Your plant, happily monitored</p></div></div>
+        <div class="date">
+          <div id="date">Loading date…</div>
+          <div id="season">Loading season…</div>
+        </div>
       </header>
 
-      <section class="plant">
-        <div class="plant-title">
-          <div><p class="eyebrow">YOUR PLANT</p><h2>Monstera</h2><p class="muted">Living room · Example plant</p></div>
-          <span class="status">● Looking good</span>
+      <section class="card">
+        <div class="plant-head">
+          <div>
+            <p class="eyebrow">YOUR PLANT</p>
+            <h2 id="plant">Loading plant…</h2>
+            <p class="muted" id="pot-name"></p>
+          </div>
+          <span class="status" id="status">Loading…</span>
         </div>
 
-        <div class="readings">
-          {readings.map((item) => (
-            <article class="reading">
-              <div class="reading-top"><span>{item.label}</span><strong>{item.value}</strong></div>
-              <div class="track"><span style={`width:${item.percent}%`}></span></div>
-              <small>{item.range}</small>
-            </article>
-          ))}
-        </div>
+        <div id="message" class="message">Connecting to Supabase…</div>
+        <div id="readings" class="grid"></div>
 
-        <footer><span>🕒 Example: last updated at 18:11</span><span>🐝 Growing nicely!</span></footer>
+        <footer>
+          <span id="updated">Last measurement: —</span>
+          <span id="refreshed">Page loaded: —</span>
+        </footer>
       </section>
-
-      <p class="note">Demo readings only. Connect Supabase to show your real plant-pot data.</p>
     </main>
   </body>
 </html>
 
 <style>
   :global(*) { box-sizing: border-box; }
-  :global(body) { margin: 0; background: #f3f7ef; color: #203629; font-family: system-ui, sans-serif; }
-  main { max-width: 900px; margin: 48px auto; padding: 0 22px; }
-  header, .brand, .plant-title, .reading-top, footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-  header { margin-bottom: 30px; }
-  .brand { justify-content: flex-start; }
-  .leaf { font-size: 42px; }
+  :global(body) {
+    margin: 0; padding: 32px 18px; min-height: 100vh;
+    background: #f3f7ef; color: #203629;
+    font-family: system-ui, sans-serif;
+  }
+  main { max-width: 900px; margin: 0 auto; }
+  header, .brand, .plant-head, footer {
+    display: flex; justify-content: space-between; align-items: center; gap: 18px;
+  }
+  header { margin-bottom: 28px; }
+  .brand { justify-content: flex-start; font-size: 34px; }
   h1, h2, p { margin: 0; }
   h1 { font-size: 27px; }
-  .brand p, .muted, .note { color: #6c7e70; }
-  .date { color: #54715c; }
-  .plant { background: white; border: 1px solid #e2eadf; border-radius: 24px; padding: 30px; box-shadow: 0 12px 36px #26462b12; }
+  .brand p, .muted { color: #718074; margin-top: 5px; font-size: 14px; }
+  .date { text-align: right; color: #54715c; line-height: 1.7; }
+  .card {
+    background: white; border: 1px solid #e2eadf; border-radius: 24px;
+    padding: 30px; box-shadow: 0 12px 36px #26462b12;
+  }
+  .plant-head { padding-bottom: 22px; border-bottom: 1px solid #e8eee5; }
   .eyebrow { color: #6b886d; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; margin-bottom: 7px; }
-  h2 { font-size: 32px; margin-bottom: 5px; }
-  .status { background: #e9f5e7; color: #347044; border-radius: 99px; padding: 10px 14px; font-size: 14px; }
-  .readings { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 32px 0; }
+  h2 { font-size: 32px; }
+  .status { background: #e9f5e7; color: #347044; border-radius: 99px; padding: 10px 14px; white-space: nowrap; }
+  .message { color: #647568; padding: 18px 0 0; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0 26px; }
   .reading { background: #f8faf6; border-radius: 16px; padding: 20px; }
-  .reading-top { margin-bottom: 15px; }
-  .reading-top strong { font-size: 22px; }
-  .track { height: 11px; background: #e4eadf; border-radius: 20px; overflow: hidden; }
-  .track span { display: block; height: 100%; background: #75a76e; border-radius: 20px; }
-  small { display: block; color: #718071; margin-top: 10px; }
-  footer { border-top: 1px solid #e6ece3; padding-top: 20px; color: #54715c; flex-wrap: wrap; }
-  .note { text-align: center; font-size: 13px; margin-top: 18px; }
-  @media (max-width: 600px) { main { margin: 24px auto; } header, .plant-title { align-items: flex-start; flex-direction: column; } .readings { grid-template-columns: 1fr; } .plant { padding: 22px; } }
+  .reading-title { color: #718074; }
+  .reading-value { font-size: 27px; font-weight: 700; margin: 9px 0 14px; }
+  .unit { font-size: 15px; color: #718074; font-weight: 500; }
+  .gauge { height: 12px; background: #e4eadf; border-radius: 20px; position: relative; margin: 12px 0 10px; }
+  .target { position: absolute; height: 100%; background: #cfe2c8; border-radius: 20px; }
+  .marker { position: absolute; top: -4px; width: 20px; height: 20px; border: 3px solid white; border-radius: 50%; background: #43804d; box-shadow: 0 0 0 1px #43804d; transform: translateX(-50%); }
+  .bad .marker { background: #c64b3d; box-shadow: 0 0 0 1px #c64b3d; }
+  .range { color: #718071; font-size: 13px; }
+  footer { border-top: 1px solid #e6ece3; padding-top: 18px; color: #54715c; flex-wrap: wrap; }
+  @media (max-width: 600px) {
+    :global(body) { padding: 22px 13px; }
+    header, .plant-head { align-items: flex-start; flex-direction: column; }
+    .date { text-align: left; }
+    .grid { grid-template-columns: 1fr; }
+    .card { padding: 21px; }
+  }
 </style>
+
+<script>
+  const url = import.meta.env.PUBLIC_SUPABASE_URL;
+  const key = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
+
+  const dateEl = document.querySelector("#date")!;
+  const seasonEl = document.querySelector("#season")!;
+  const messageEl = document.querySelector("#message")!;
+  const readingsEl = document.querySelector("#readings")!;
+
+  function showDateAndSeason() {
+    const now = new Date();
+    dateEl.textContent = now.toLocaleDateString(undefined, {
+      weekday: "long", year: "numeric", month: "long", day: "numeric"
+    });
+
+    const month = now.getMonth();
+    const season =
+      month >= 2 && month <= 4 ? "Spring" :
+      month >= 5 && month <= 7 ? "Summer" :
+      month >= 8 && month <= 10 ? "Autumn" : "Winter";
+
+    seasonEl.textContent = `Season: ${season}`;
+    document.querySelector("#refreshed")!.textContent =
+      `Page loaded: ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  }
+
+  function number(value: unknown): number | null {
+    if (value === null || value === undefined || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function addReading(label: string, value: unknown, unit: string, lowValue: unknown, highValue: unknown, decimals = 0) {
+    const low = number(lowValue);
+    const high = number(highValue);
+    const current = number(value);
+
+    const article = document.createElement("article");
+    article.className = "reading";
+
+    const title = document.createElement("div");
+    title.className = "reading-title";
+    title.textContent = label;
+
+    const shownValue = document.createElement("div");
+    shownValue.className = "reading-value";
+    shownValue.textContent = current === null ? "—" : `${current.toFixed(decimals)} ${unit}`;
+
+    const gauge = document.createElement("div");
+    gauge.className = "gauge";
+
+    const target = document.createElement("div");
+    target.className = "target";
+
+    const marker = document.createElement("div");
+    marker.className = "marker";
+
+    const range = document.createElement("div");
+    range.className = "range";
+
+    if (low !== null && high !== null && high > low) {
+      const span = high - low;
+      const axisMin = low - span * 0.5;
+      const axisMax = high + span * 0.5;
+      const targetLeft = ((low - axisMin) / (axisMax - axisMin)) * 100;
+      const targetWidth = ((high - low) / (axisMax - axisMin)) * 100;
+
+      target.style.left = `${targetLeft}%`;
+      target.style.width = `${targetWidth}%`;
+      gauge.append(target);
+
+      if (current !== null) {
+        const position = Math.max(0, Math.min(100, ((current - axisMin) / (axisMax - axisMin)) * 100));
+        marker.style.left = `${position}%`;
+        gauge.append(marker);
+        if (current < low || current > high) article.classList.add("bad");
+      }
+
+      range.textContent = `Target: ${low}–${high} ${unit}`;
+    } else {
+      range.textContent = "Target range unavailable";
+    }
+
+    article.append(title, shownValue, gauge, range);
+    readingsEl.append(article);
+  }
+
+  function setText(selector: string, value: string) {
+    document.querySelector(selector)!.textContent = value;
+  }
+
+  async function loadPlant() {
+    showDateAndSeason();
+
+    if (!url || !key) {
+      messageEl.textContent = "Supabase settings are missing. Add the two PUBLIC_ variables in Cloudflare, then redeploy.";
+      return;
+    }
+
+    try {
+      const endpoint = `${url.replace(/\/$/, "")}/rest/v1/v_base_station?select=*&order=name.asc&limit=1`;
+      const response = await fetch(endpoint, { headers: { apikey: key } });
+
+      if (!response.ok) {
+        const details = await response.text();
+        throw new Error(`Supabase returned ${response.status}: ${details}`);
+      }
+
+      const rows = await response.json();
+      if (!rows.length) {
+        messageEl.textContent = "No plant is visible. Check the view and its read permissions.";
+        return;
+      }
+
+      const p = rows[0];
+      const plantName = p.pflanze || p.name || "Plant";
+      setText("#plant", plantName);
+      setText("#pot-name", p.name ? `Pot: ${p.name}` : "");
+      messageEl.textContent = "";
+
+      const month = new Date().getMonth() + 1;
+      const winter = month >= 11 || month <= 3;
+      const tempMin = winter ? p.temp_min_winter ?? p.temp_min : p.temp_min;
+      const tempMax = winter ? p.temp_max_winter ?? p.temp_max : p.temp_max;
+      const soilMin = winter ? 0 : p.soil_min;
+      const soilMax = winter ? p.soil_max_winter ?? p.soil_max : p.soil_max;
+
+      readingsEl.replaceChildren();
+      addReading("Temperature", p.temperature, "°C", tempMin, tempMax, 1);
+      addReading("Air humidity", p.humidity, "%", p.humidity_min, p.humidity_max);
+      addReading("Light", p.light, "lx", p.light_min, p.light_max);
+      addReading("Soil moisture", p.soil_moisture, "%", soilMin, soilMax);
+
+      const age = number(p.age_min);
+      if (age === null || age < 0) {
+        setText("#updated", "Last measurement: time unavailable");
+      } else {
+        const measured = new Date(Date.now() - age * 60_000);
+        setText("#updated", `Last measurement: ${measured.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} (about ${age} min ago)`);
+      }
+
+      const outside = [p.temperature < tempMin || p.temperature > tempMax,
+                       p.humidity < p.humidity_min || p.humidity > p.humidity_max,
+                       p.soil_moisture < soilMin || p.soil_moisture > soilMax].some(Boolean);
+
+      setText("#status", outside ? "● Check plant" : "● Looking good");
+    } catch (error) {
+      console.error(error);
+      messageEl.textContent = "Could not load plant data. Check the browser console and Supabase read permissions.";
+      setText("#status", "Connection error");
+    }
+  }
+
+  loadPlant();
+  setInterval(loadPlant, 60_000);
+</script>
