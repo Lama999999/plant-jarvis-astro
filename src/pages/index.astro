@@ -13,7 +13,7 @@
     <main>
       <header class="topbar">
         <div class="brand">
-          <img class="brand-logo" src="/logo.png" alt="PlantJarvis-Logo" />
+          <img id="brand-logo" class="brand-logo" src="/logo.png" alt="PlantJarvis-Logo" />
           <div>
             <h1>PlantJarvis</h1>
             <p>Damit deine Pflanzen bestens versorgt sind</p>
@@ -41,6 +41,7 @@
 
       <section id="detail-screen" hidden>
         <button id="back-button" class="back-button" type="button">← Zurück zu allen Pflanzen</button>
+
         <article id="detail-card" class="detail-card">
           <div class="plant-head">
             <div>
@@ -93,14 +94,16 @@
     </main>
 
     <script>
-      // Der Publishable Key ist für die Verwendung im Browser vorgesehen.
+      // Dieser Publishable Key ist für die Verwendung im Browser vorgesehen.
       // Niemals einen service_role- oder Secret-Key hier eintragen.
       const SUPABASE_URL = "https://dzvzbvylebefxdhosisi.supabase.co";
       const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_GC1g6g1Wl4V18vX44-9fMw_LHisOABS";
 
-      // Falls deine beschreibbare Tabelle anders heißt, hier den Tabellennamen ändern.
-      const POT_TABLE = "pots";
+      // Die View wird zum Laden der vorhandenen Pflanzentöpfe verwendet.
       const VIEW_NAME = "v_base_station";
+
+      // Der richtige Tabellennamen für neue Einträge muss in Supabase geprüft werden.
+      const POT_TABLE = "pots";
 
       const $ = (selector) => document.querySelector(selector);
       let plants = [];
@@ -160,14 +163,13 @@
           const value = asNumber(rawValue);
           const low = asNumber(rawLow);
           const high = asNumber(rawHigh);
+
           if (value === null || low === null || high === null || high <= low) continue;
 
           if (value < low || value > high) {
             warning = true;
             const deviation = value < low ? low - value : value - high;
 
-            // Kritisch: Bodenfeuchte unter Minimum oder eine starke Abweichung
-            // von mehr als 20 % der gesamten Zielspanne.
             if ((isSoil && value < low) || deviation > 0.2 * (high - low)) {
               return "kritisch";
             }
@@ -197,7 +199,8 @@
         list.replaceChildren();
 
         if (!plants.length) {
-          $("#home-message").textContent = "Noch keine Pflanzentöpfe vorhanden. Füge deinen ersten Topf hinzu.";
+          $("#home-message").textContent =
+            "Noch keine Pflanzentöpfe vorhanden. Füge deinen ersten Topf hinzu.";
           return;
         }
 
@@ -208,6 +211,7 @@
           const card = document.createElement("button");
           card.type = "button";
           card.className = "plant-tile";
+
           if (state === "kritisch") card.classList.add("critical");
 
           const icon = document.createElement("span");
@@ -225,8 +229,10 @@
 
           const summary = document.createElement("span");
           summary.className = "tile-summary";
+
           const temperature = asNumber(plant.temperature);
           const soil = asNumber(plant.soil_moisture);
+
           summary.textContent =
             `Temperatur ${temperature === null ? "—" : `${temperature.toFixed(1)} °C`} · Bodenfeuchte ${soil === null ? "—" : `${soil}%`}`;
 
@@ -269,6 +275,7 @@
         const displayedValue = document.createElement("strong");
         displayedValue.className = "reading-value";
         displayedValue.textContent = value === null ? "—" : `${value.toFixed(decimals)} ${unit}`;
+
         top.append(title, displayedValue);
 
         const gauge = document.createElement("div");
@@ -285,33 +292,43 @@
         legend.className = "gauge-legend";
 
         if (low !== null && high !== null && high > low) {
-          // Die grüne Zone markiert den Zielbereich; die Raute zeigt den Messwert.
           const span = high - low;
           const axisMin = Math.max(0, low - span * 0.5);
           const axisMax = high + span * 0.5;
           const axisSpan = axisMax - axisMin;
 
-          const targetLeft = ((low - axisMin) / axisSpan) * 100;
-          const targetWidth = ((high - low) / axisSpan) * 100;
-          target.style.left = `${targetLeft}%`;
-          target.style.width = `${targetWidth}%`;
+          target.style.left = `${((low - axisMin) / axisSpan) * 100}%`;
+          target.style.width = `${((high - low) / axisSpan) * 100}%`;
           gauge.append(target);
 
           if (value !== null) {
-            const position = Math.max(0, Math.min(100, ((value - axisMin) / axisSpan) * 100));
+            const position = Math.max(
+              0,
+              Math.min(100, ((value - axisMin) / axisSpan) * 100)
+            );
+
             marker.style.left = `${position}%`;
             gauge.append(marker);
-            gauge.setAttribute("aria-label", `${label}: ${value} ${unit}; Zielbereich ${low} bis ${high} ${unit}`);
+            gauge.setAttribute(
+              "aria-label",
+              `${label}: ${value} ${unit}; Zielbereich ${low} bis ${high} ${unit}`
+            );
+
             if (value < low || value > high) card.classList.add("out-of-range");
           } else {
-            gauge.setAttribute("aria-label", `${label}: kein Messwert; Zielbereich ${low} bis ${high} ${unit}`);
+            gauge.setAttribute(
+              "aria-label",
+              `${label}: kein Messwert; Zielbereich ${low} bis ${high} ${unit}`
+            );
           }
 
-          const lowLabel = document.createElement("span");
-          lowLabel.textContent = `Ziel: ${low}–${high} ${unit}`;
+          const targetLabel = document.createElement("span");
+          targetLabel.textContent = `Ziel: ${low}–${high} ${unit}`;
+
           const valueLabel = document.createElement("span");
           valueLabel.textContent = value === null ? "Messwert: —" : "◆ Messwert";
-          legend.append(lowLabel, valueLabel);
+
+          legend.append(targetLabel, valueLabel);
         } else {
           gauge.setAttribute("aria-label", `${label}: Zielbereich nicht verfügbar`);
           legend.textContent = "Zielbereich nicht verfügbar";
@@ -329,19 +346,24 @@
         $("#home-screen").hidden = true;
         $("#detail-screen").hidden = false;
 
-        $("#plant-name").textContent = selectedPlant.pflanze || selectedPlant.name || "Pflanze";
-        $("#pot-name").textContent = selectedPlant.name ? `Topf: ${selectedPlant.name}` : "";
+        $("#plant-name").textContent =
+          selectedPlant.pflanze || selectedPlant.name || "Pflanze";
+        $("#pot-name").textContent =
+          selectedPlant.name ? `Topf: ${selectedPlant.name}` : "";
 
         const badge = $("#plant-status");
         badge.className = `status ${state}`;
         setAlertBadge(
           badge,
-          state === "kritisch" ? "KRITISCH" : state === "achtung" ? "PFLANZE PRÜFEN" : "ALLES GUT",
+          state === "kritisch" ? "KRITISCH" :
+            state === "achtung" ? "PFLANZE PRÜFEN" : "ALLES GUT",
           state === "kritisch"
         );
+
         $("#detail-card").classList.toggle("critical", state === "kritisch");
 
         const age = asNumber(selectedPlant.age_min);
+
         if (age === null || age < 0) {
           $("#last-measurement").textContent = "Letzte Messung: Zeit nicht verfügbar";
         } else {
@@ -355,6 +377,7 @@
 
         const ranges = getSeasonRanges(selectedPlant);
         $("#readings").replaceChildren();
+
         addReading("Temperatur", selectedPlant.temperature, "°C", ranges.tempMin, ranges.tempMax, 1);
         addReading("Luftfeuchtigkeit", selectedPlant.humidity, "%", selectedPlant.humidity_min, selectedPlant.humidity_max);
         addReading("Licht", selectedPlant.light, "lx", selectedPlant.light_min, selectedPlant.light_max);
@@ -376,7 +399,9 @@
         updateDate();
 
         try {
-          const endpoint = `${SUPABASE_URL}/rest/v1/${VIEW_NAME}?select=*&order=name.asc`;
+          const endpoint =
+            `${SUPABASE_URL}/rest/v1/${VIEW_NAME}?select=*&order=name.asc`;
+
           const response = await fetch(endpoint, {
             headers: { apikey: SUPABASE_PUBLISHABLE_KEY }
           });
@@ -393,12 +418,13 @@
             const index = plants.findIndex(
               (plant) => (plant.pot_id || plant.device_id) === id
             );
+
             if (index >= 0) showPlant(index);
           }
         } catch (error) {
           console.error(error);
           $("#home-message").textContent =
-            "Pflanzen konnten nicht geladen werden. Prüfe die Browser-Konsole und die Leseberechtigungen in Supabase.";
+            `Pflanzen konnten nicht geladen werden: ${error.message}`;
         }
       }
 
@@ -418,14 +444,17 @@
 
       function stopScanner() {
         scanActive = false;
+
         if (scannerControls) {
           scannerControls.stop();
           scannerControls = null;
         }
+
         if (cameraStream) {
           cameraStream.getTracks().forEach((track) => track.stop());
           cameraStream = null;
         }
+
         $("#qr-video").hidden = true;
       }
 
@@ -444,14 +473,15 @@
       }
 
       async function startNativeQrScanner(video) {
-        const Detector = window.BarcodeDetector;
-        if (!Detector) return false;
+        if (!window.BarcodeDetector) return false;
 
-        const detector = new Detector({ formats: ["qr_code"] });
+        const detector = new BarcodeDetector({ formats: ["qr_code"] });
+
         cameraStream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: { facingMode: { ideal: "environment" } }
         });
+
         video.srcObject = cameraStream;
         video.hidden = false;
         await video.play();
@@ -459,17 +489,21 @@
 
         const scan = async () => {
           if (!scanActive) return;
+
           try {
             const codes = await detector.detect(video);
+
             if (codes.length) {
               $("#new-device").value = deviceIdFromQr(codes[0].rawValue);
-              $("#form-message").textContent = "QR-Code erkannt. Geräte-ID wurde eingetragen.";
+              $("#form-message").textContent =
+                "QR-Code erkannt. Geräte-ID wurde eingetragen.";
               stopScanner();
               return;
             }
           } catch (error) {
             console.warn("QR-Erkennung:", error);
           }
+
           if (scanActive) requestAnimationFrame(scan);
         };
 
@@ -478,11 +512,11 @@
       }
 
       async function startLibraryQrScanner(video) {
-        // Fallback für Browser ohne eingebaute QR-Erkennung.
         const dynamicImport = new Function("url", "return import(url)");
         const library = await dynamicImport(
           "https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/+esm"
         );
+
         const Reader = library.BrowserMultiFormatReader;
         if (!Reader) throw new Error("QR-Scanner-Bibliothek konnte nicht geladen werden.");
 
@@ -496,15 +530,17 @@
           (result, error) => {
             if (result && scanActive) {
               $("#new-device").value = deviceIdFromQr(result.getText());
-              $("#form-message").textContent = "QR-Code erkannt. Geräte-ID wurde eingetragen.";
+              $("#form-message").textContent =
+                "QR-Code erkannt. Geräte-ID wurde eingetragen.";
               stopScanner();
             }
-            // Einzelne nicht erkannte Videoframes sind normal; weiter scannen.
+
             if (error && error.name !== "NotFoundException") {
               console.debug("QR-Scan:", error);
             }
           }
         );
+
         return true;
       }
 
@@ -522,9 +558,14 @@
         $("#form-message").textContent = "Kamera wird gestartet …";
 
         try {
-          const nativeWorked = await startNativeQrScanner(video);
-          if (!nativeWorked) await startLibraryQrScanner(video);
-          $("#form-message").textContent = "Richte die Kamera auf den QR-Code am Pflanzentopf.";
+          const nativeScannerStarted = await startNativeQrScanner(video);
+
+          if (!nativeScannerStarted) {
+            await startLibraryQrScanner(video);
+          }
+
+          $("#form-message").textContent =
+            "Richte die Kamera auf den QR-Code am Pflanzentopf.";
         } catch (error) {
           console.error(error);
           stopScanner();
@@ -568,19 +609,20 @@
           });
 
           if (!response.ok) {
-            throw new Error(`${response.status}: ${await response.text()}`);
+            const errorText = await response.text();
+            throw new Error(`${response.status}: ${errorText}`);
           }
 
           stopScanner();
           $("#add-form").reset();
           dialog.close();
           await loadPlants();
+
           $("#home-screen").hidden = false;
           $("#detail-screen").hidden = true;
         } catch (error) {
           console.error(error);
-          message.textContent =
-            "Topf konnte nicht gespeichert werden. Prüfe Tabellenname, Spaltennamen und INSERT-Berechtigung in Supabase.";
+          message.textContent = `Speichern fehlgeschlagen: ${error.message}`;
         } finally {
           saveButton.disabled = false;
         }
@@ -605,6 +647,7 @@
 
 <style>
   :global(*) { box-sizing: border-box; }
+
   :global(body) {
     margin: 0;
     padding: 34px 20px;
@@ -613,6 +656,7 @@
     color: #203629;
     font-family: system-ui, sans-serif;
   }
+
   :global(button), :global(input) { font: inherit; }
   [hidden] { display: none !important; }
   main { max-width: 1080px; margin: 0 auto; }
@@ -623,8 +667,10 @@
     justify-content: space-between;
     gap: 18px;
   }
+
   .topbar { margin-bottom: 46px; }
   .brand { justify-content: flex-start; gap: 20px; }
+
   .brand-logo {
     display: block;
     width: 112px;
@@ -632,9 +678,11 @@
     object-fit: contain;
     border-radius: 20px;
   }
+
   h1, h2, p { margin: 0; }
   h1 { font-size: 30px; letter-spacing: -.6px; }
   .brand p, .muted { margin-top: 6px; color: #718074; }
+
   .button {
     border: 0;
     border-radius: 14px;
@@ -645,10 +693,12 @@
     font-weight: 700;
     box-shadow: 0 6px 16px #38734e22;
   }
+
   .button:hover { background: #2c5d3e; }
   .button:disabled { opacity: .6; cursor: wait; }
 
   .intro { margin-bottom: 25px; }
+
   .eyebrow {
     margin-bottom: 8px;
     color: #6b886d;
@@ -656,6 +706,7 @@
     font-weight: 800;
     letter-spacing: 1.5px;
   }
+
   h2 { font-size: clamp(26px, 4vw, 35px); }
   .date-box { color: #54715c; line-height: 1.8; text-align: right; }
   .message { padding: 15px 0; color: #68796c; }
@@ -665,6 +716,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
   }
+
   .plant-tile {
     position: relative;
     display: flex;
@@ -683,6 +735,7 @@
     box-shadow: 0 10px 28px #26462b0c;
     transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
   }
+
   .plant-tile::before {
     position: absolute;
     top: 0;
@@ -692,12 +745,15 @@
     background: #8db583;
     content: "";
   }
+
   .plant-tile:hover {
     transform: translateY(-3px);
     border-color: #9dbb96;
     box-shadow: 0 16px 35px #26462b17;
   }
+
   .plant-tile.critical { animation: critical-blink 1s infinite; }
+
   .tile-icon {
     display: grid;
     flex: 0 0 58px;
@@ -708,10 +764,12 @@
     background: #eaf3e5;
     font-size: 31px;
   }
+
   .tile-info { display: grid; flex: 1; gap: 6px; min-width: 0; }
   .tile-info strong { font-size: 19px; }
   .tile-info small, .tile-summary { color: #718074; overflow-wrap: anywhere; }
   .tile-summary { font-size: 12px; }
+
   .tile-status, .status {
     padding: 9px 12px;
     border-radius: 99px;
@@ -721,8 +779,17 @@
     font-weight: 800;
     white-space: nowrap;
   }
-  .tile-status.achtung, .status.achtung { background: #fff2d9; color: #8a5a00; }
-  .tile-status.kritisch, .status.kritisch { background: #c83131; color: white; }
+
+  .tile-status.achtung, .status.achtung {
+    background: #fff2d9;
+    color: #8a5a00;
+  }
+
+  .tile-status.kritisch, .status.kritisch {
+    background: #c83131;
+    color: white;
+  }
+
   .tile-arrow { color: #78917b; font-size: 30px; line-height: 1; }
 
   .siren {
@@ -730,10 +797,12 @@
     transform-origin: center;
     animation: siren-flash .65s steps(2, end) infinite;
   }
+
   @keyframes siren-flash {
     0%, 100% { opacity: 1; filter: drop-shadow(0 0 2px #e00000); }
     50% { opacity: .35; filter: drop-shadow(0 0 9px #ff0000); }
   }
+
   @keyframes critical-blink {
     0%, 100% { background-color: #fff; box-shadow: 0 0 0 2px #d52626; }
     50% { background-color: #ffe1e1; box-shadow: 0 0 0 5px #d52626; }
@@ -748,6 +817,7 @@
     cursor: pointer;
     font-weight: 750;
   }
+
   .detail-card {
     padding: 32px;
     border: 1px solid #e2eadf;
@@ -755,6 +825,7 @@
     background: white;
     box-shadow: 0 12px 36px #26462b12;
   }
+
   .detail-card.critical { animation: critical-blink 1s infinite; }
   .plant-head { padding-bottom: 23px; border-bottom: 1px solid #e8eee5; }
 
@@ -764,16 +835,29 @@
     gap: 18px;
     margin: 23px 0 27px;
   }
+
   .reading {
     padding: 21px;
     border: 1px solid #edf1e9;
     border-radius: 19px;
     background: #f8faf6;
   }
-  .reading.out-of-range { border-color: #e5a4a4; background: #fff8f7; }
-  .reading-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+
+  .reading.out-of-range {
+    border-color: #e5a4a4;
+    background: #fff8f7;
+  }
+
+  .reading-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
   .reading-label { color: #718074; font-weight: 650; }
   .reading-value { color: #203629; font-size: 25px; white-space: nowrap; }
+
   .gauge {
     position: relative;
     height: 15px;
@@ -782,6 +866,7 @@
     background: linear-gradient(90deg, #f1d9d4, #f5edda 50%, #f1d9d4);
     box-shadow: inset 0 1px 3px #263b2c1c;
   }
+
   .target {
     position: absolute;
     top: 0;
@@ -791,6 +876,7 @@
     background: #9dcc91;
     box-shadow: 0 0 0 3px #9dcc9128;
   }
+
   .marker {
     position: absolute;
     top: 50%;
@@ -802,7 +888,9 @@
     box-shadow: 0 1px 5px #122f1b88;
     transform: translate(-50%, -50%) rotate(45deg);
   }
+
   .out-of-range .marker { background: #c33b32; }
+
   .gauge-legend {
     display: flex;
     justify-content: space-between;
@@ -810,13 +898,20 @@
     color: #718071;
     font-size: 12px;
   }
+
   footer {
     flex-wrap: wrap;
     padding-top: 18px;
     border-top: 1px solid #e6ece3;
     color: #54715c;
   }
-  .small-note { margin-top: 25px; color: #829084; font-size: 13px; text-align: center; }
+
+  .small-note {
+    margin-top: 25px;
+    color: #829084;
+    font-size: 13px;
+    text-align: center;
+  }
 
   dialog {
     width: min(560px, calc(100% - 28px));
@@ -826,8 +921,10 @@
     color: #203629;
     box-shadow: 0 24px 80px #17291c44;
   }
+
   dialog::backdrop { background: #14201888; }
   .dialog-head { margin-bottom: 22px; }
+
   .close-button {
     border: 0;
     background: transparent;
@@ -835,7 +932,9 @@
     font-size: 30px;
     cursor: pointer;
   }
+
   form > label { display: block; margin: 14px 0 7px; font-weight: 700; }
+
   form input {
     width: 100%;
     padding: 12px;
@@ -844,10 +943,16 @@
     background: white;
     color: #203629;
   }
-  form input:focus { outline: 3px solid #9dcc914c; border-color: #75a66e; }
+
+  form input:focus {
+    outline: 3px solid #9dcc914c;
+    border-color: #75a66e;
+  }
+
   .device-row input { min-width: 0; }
   .secondary { flex: 0 0 auto; background: #e5eee1; color: #315f40; box-shadow: none; }
   .form-message { min-height: 24px; margin: 11px 0; color: #68796c; font-size: 14px; }
+
   #qr-video {
     width: 100%;
     max-height: 300px;
@@ -856,6 +961,7 @@
     background: #17291c;
     object-fit: cover;
   }
+
   .save-button { width: 100%; margin-top: 8px; }
 
   @media (prefers-reduced-motion: reduce) {
@@ -865,6 +971,7 @@
       scroll-behavior: auto !important;
     }
   }
+
   @media (max-width: 700px) {
     :global(body) { padding: 22px 14px; }
     .topbar, .intro, .plant-head { align-items: flex-start; flex-direction: column; }
@@ -873,6 +980,7 @@
     .plant-list, .readings { grid-template-columns: 1fr; }
     .detail-card { padding: 22px; }
   }
+
   @media (max-width: 460px) {
     .topbar { gap: 20px; }
     .brand { gap: 13px; }
