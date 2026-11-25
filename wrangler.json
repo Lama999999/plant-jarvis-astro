@@ -1,15 +1,18 @@
 {
-	"name": "plant-jarvis-astro",
-	"compatibility_date": "2025-10-08",
-	"compatibility_flags": ["nodejs_compat"],
-	"main": "./dist/_worker.js/index.js",
-	"assets": {
-		"directory": "./dist",
-		"binding": "ASSETS"
-	},
-	"observability": {
-		"enabled": true
-	},
-	"upload_source_maps": true
-
+  "name": "plant-jarvis-astro",
+  "compatibility_date": "2025-10-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "./dist/_worker.js/index.js",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "upload_source_maps": true,
+  "vars": {
+    "PUBLIC_SUPABASE_URL": "https://dzvzbvylebefxdhosisi.supabase.co",
+    "PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_GC1g6g1Wl4V18vX44-9fMw_LHisOABS"
+  }
 }
