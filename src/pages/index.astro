@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f3f7ef" />
-    <link id="site-icon" rel="icon" href="data:," />
+    <link rel="icon" type="image/png" href="/icon.png" />
     <title>PlantJarvis</title>
   </head>
 
@@ -13,19 +13,14 @@
     <main>
       <header class="topbar">
         <div class="brand">
-          <img id="brand-logo" class="brand-logo" alt="Your logo" hidden />
-          <span id="brand-leaf" class="brand-leaf">🌿</span>
+          <img class="brand-logo" src="/logo.png" alt="PlantJarvis logo" />
           <div>
             <h1>PlantJarvis</h1>
             <p>Your plants, happily monitored</p>
           </div>
         </div>
 
-        <div class="header-actions">
-          <label class="upload-button" for="logo-file">＋ Add logo</label>
-          <input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden />
-          <button id="add-open" class="button">＋ Add plant pot</button>
-        </div>
+        <button id="add-open" class="button" type="button">＋ Add plant pot</button>
       </header>
 
       <section id="home-screen">
@@ -46,7 +41,8 @@
       </section>
 
       <section id="detail-screen" hidden>
-        <button id="back-button" class="back-button">← All plants</button>
+        <button id="back-button" class="back-button" type="button">← All plants</button>
+
         <article id="detail-card" class="detail-card">
           <div class="plant-head">
             <div>
@@ -88,22 +84,23 @@
             <input id="new-device" name="device" placeholder="Scan QR or enter device ID" required maxlength="100" />
             <button id="scan-button" class="button secondary" type="button">Scan QR</button>
           </div>
+
           <video id="qr-video" playsinline hidden></video>
           <p id="form-message" class="form-message">Scan the pot’s QR code or enter its device ID.</p>
-
           <button id="save-pot" class="button save-button" type="submit">Add plant pot</button>
         </form>
       </dialog>
 
-      <p class="small-note">Measurements refresh automatically. The logo is saved in this browser.</p>
+      <p class="small-note">Measurements refresh automatically.</p>
     </main>
 
     <script>
-      // Supabase project settings. This is a publishable key, not a secret key.
+      // These are public browser settings. Never put a service_role or secret key here.
       const SUPABASE_URL = "https://dzvzbvylebefxdhosisi.supabase.co";
       const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_GC1g6g1Wl4V18vX44-9fMw_LHisOABS";
 
-      // Change this if your writable table has a different name.
+      // Assumes your writable table is called "pots".
+      // Change this if your Supabase table has a different name.
       const POT_TABLE = "pots";
       const VIEW_NAME = "v_base_station";
 
@@ -116,18 +113,19 @@
       function updateDate() {
         const now = new Date();
         $("#today").textContent = now.toLocaleDateString(undefined, {
-          weekday: "long", year: "numeric", month: "long", day: "numeric"
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric"
         });
-        const month = now.getMonth();
-        const season = month >= 2 && month <= 4 ? "Spring"
-          : month >= 5 && month <= 7 ? "Summer"
-          : month >= 8 && month <= 10 ? "Autumn" : "Winter";
-        $("#season").textContent = `Season: ${season}`;
-      }
 
-      function setPageUpdated() {
-        $("#page-updated").textContent =
-          `Page updated: ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+        const month = now.getMonth();
+        const season =
+          month >= 2 && month <= 4 ? "Spring" :
+          month >= 5 && month <= 7 ? "Summer" :
+          month >= 8 && month <= 10 ? "Autumn" : "Winter";
+
+        $("#season").textContent = `Season: ${season}`;
       }
 
       function asNumber(value) {
@@ -139,6 +137,7 @@
       function getSeasonRanges(plant) {
         const month = new Date().getMonth() + 1;
         const winter = month >= 11 || month <= 3;
+
         return {
           tempMin: winter ? (plant.temp_min_winter ?? plant.temp_min) : plant.temp_min,
           tempMax: winter ? (plant.temp_max_winter ?? plant.temp_max) : plant.temp_max,
@@ -147,7 +146,7 @@
         };
       }
 
-      function health(plant) {
+      function getHealth(plant) {
         const ranges = getSeasonRanges(plant);
         const checks = [
           [plant.temperature, ranges.tempMin, ranges.tempMax, false],
@@ -155,20 +154,44 @@
           [plant.light, plant.light_min, plant.light_max, false],
           [plant.soil_moisture, ranges.soilMin, ranges.soilMax, true]
         ];
+
         let warning = false;
 
-        for (const [raw, rawLow, rawHigh, soil] of checks) {
-          const value = asNumber(raw);
+        for (const [rawValue, rawLow, rawHigh, soil] of checks) {
+          const value = asNumber(rawValue);
           const low = asNumber(rawLow);
           const high = asNumber(rawHigh);
+
           if (value === null || low === null || high === null || high <= low) continue;
+
           if (value < low || value > high) {
             warning = true;
             const deviation = value < low ? low - value : value - high;
-            if ((soil && value < low) || deviation > 0.2 * (high - low)) return "critical";
+
+            // Critical: soil is below its minimum, or another reading is
+            // more than 20% of its target range outside the acceptable range.
+            if ((soil && value < low) || deviation > 0.2 * (high - low)) {
+              return "critical";
+            }
           }
         }
+
         return warning ? "warning" : "ok";
+      }
+
+      function setAlertBadge(element, label, critical) {
+        element.replaceChildren();
+
+        if (critical) {
+          const siren = document.createElement("span");
+          siren.className = "siren";
+          siren.setAttribute("role", "img");
+          siren.setAttribute("aria-label", "Critical alert");
+          siren.textContent = "🚨";
+          element.append(siren, document.createTextNode(" "));
+        }
+
+        element.append(document.createTextNode(label));
       }
 
       function renderHome() {
@@ -181,28 +204,38 @@
         }
 
         $("#home-message").textContent = "";
+
         plants.forEach((plant, index) => {
+          const state = getHealth(plant);
           const card = document.createElement("button");
           card.type = "button";
           card.className = "plant-tile";
-          const state = health(plant);
 
           if (state === "critical") card.classList.add("critical");
+
           const icon = document.createElement("span");
           icon.className = "tile-icon";
           icon.textContent = "🪴";
 
           const info = document.createElement("span");
           info.className = "tile-info";
+
           const name = document.createElement("strong");
           name.textContent = plant.pflanze || plant.name || "Plant";
+
           const pot = document.createElement("small");
           pot.textContent = plant.name ? `Pot: ${plant.name}` : "Plant pot";
+
           info.append(name, pot);
 
           const badge = document.createElement("span");
           badge.className = `tile-status ${state}`;
-          badge.textContent = state === "critical" ? "Critical" : state === "warning" ? "Check" : "OK";
+          setAlertBadge(
+            badge,
+            state === "critical" ? "Critical" : state === "warning" ? "Check" : "OK",
+            state === "critical"
+          );
+
           card.append(icon, info, badge);
           card.addEventListener("click", () => showPlant(index));
           list.append(card);
@@ -213,6 +246,7 @@
         const value = asNumber(rawValue);
         const low = asNumber(rawLow);
         const high = asNumber(rawHigh);
+
         const card = document.createElement("article");
         card.className = "reading";
 
@@ -220,35 +254,47 @@
         title.className = "reading-label";
         title.textContent = label;
 
-        const val = document.createElement("div");
-        val.className = "reading-value";
-        val.textContent = value === null ? "—" : `${value.toFixed(decimals)} ${unit}`;
+        const displayedValue = document.createElement("div");
+        displayedValue.className = "reading-value";
+        displayedValue.textContent = value === null ? "—" : `${value.toFixed(decimals)} ${unit}`;
 
         const gauge = document.createElement("div");
         gauge.className = "gauge";
+
         const target = document.createElement("div");
         target.className = "target";
+
         const marker = document.createElement("div");
         marker.className = "marker";
 
         const range = document.createElement("small");
+
         if (low !== null && high !== null && high > low) {
           const span = high - low;
           const axisMin = low - span * 0.5;
           const axisMax = high + span * 0.5;
+
           target.style.left = `${((low - axisMin) / (axisMax - axisMin)) * 100}%`;
           target.style.width = `${((high - low) / (axisMax - axisMin)) * 100}%`;
           gauge.append(target);
+
           if (value !== null) {
-            marker.style.left = `${Math.max(0, Math.min(100, ((value - axisMin) / (axisMax - axisMin)) * 100))}%`;
+            const position = Math.max(
+              0,
+              Math.min(100, ((value - axisMin) / (axisMax - axisMin)) * 100)
+            );
+            marker.style.left = `${position}%`;
             gauge.append(marker);
+
             if (value < low || value > high) card.classList.add("out-of-range");
           }
+
           range.textContent = `Target: ${low}–${high} ${unit}`;
         } else {
           range.textContent = "Target range unavailable";
         }
-        card.append(title, val, gauge, range);
+
+        card.append(title, displayedValue, gauge, range);
         $("#readings").append(card);
       }
 
@@ -256,18 +302,22 @@
         selectedPlant = plants[index];
         if (!selectedPlant) return;
 
-        const status = health(selectedPlant);
+        const state = getHealth(selectedPlant);
         $("#home-screen").hidden = true;
         $("#detail-screen").hidden = false;
 
         $("#plant-name").textContent = selectedPlant.pflanze || selectedPlant.name || "Plant";
         $("#pot-name").textContent = selectedPlant.name ? `Pot: ${selectedPlant.name}` : "";
-        const badge = $("#plant-status");
-        badge.className = `status ${status}`;
-        badge.textContent = status === "critical" ? "● CRITICAL" : status === "warning" ? "● CHECK PLANT" : "● LOOKING GOOD";
 
-        const detailCard = $("#detail-card");
-        detailCard.classList.toggle("critical", status === "critical");
+        const badge = $("#plant-status");
+        badge.className = `status ${state}`;
+        setAlertBadge(
+          badge,
+          state === "critical" ? "CRITICAL" : state === "warning" ? "CHECK PLANT" : "LOOKING GOOD",
+          state === "critical"
+        );
+
+        $("#detail-card").classList.toggle("critical", state === "critical");
 
         const age = asNumber(selectedPlant.age_min);
         if (age === null || age < 0) {
@@ -275,82 +325,74 @@
         } else {
           const measured = new Date(Date.now() - age * 60000);
           $("#last-measurement").textContent =
-            `Last measurement: ${measured.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} (about ${age} min ago)`;
+            `Last measurement: ${measured.toLocaleString([], {
+              dateStyle: "medium",
+              timeStyle: "short"
+            })} (about ${age} min ago)`;
         }
 
         const ranges = getSeasonRanges(selectedPlant);
         $("#readings").replaceChildren();
+
         addReading("Temperature", selectedPlant.temperature, "°C", ranges.tempMin, ranges.tempMax, 1);
         addReading("Air humidity", selectedPlant.humidity, "%", selectedPlant.humidity_min, selectedPlant.humidity_max);
         addReading("Light", selectedPlant.light, "lx", selectedPlant.light_min, selectedPlant.light_max);
         addReading("Soil moisture", selectedPlant.soil_moisture, "%", ranges.soilMin, ranges.soilMax);
-        $("#detail-message").textContent = age !== null && age > 180
-          ? `The latest measurement is about ${age} minutes old.`
-          : "";
-        setPageUpdated();
+
+        $("#detail-message").textContent =
+          age !== null && age > 180
+            ? `The latest measurement is about ${age} minutes old.`
+            : "";
+
+        $("#page-updated").textContent =
+          `Page updated: ${new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit"
+          })}`;
       }
 
       async function loadPlants() {
         updateDate();
+
         try {
-          const endpoint = `${SUPABASE_URL}/rest/v1/${VIEW_NAME}?select=*&order=name.asc`;
+          const endpoint =
+            `${SUPABASE_URL}/rest/v1/${VIEW_NAME}?select=*&order=name.asc`;
+
           const response = await fetch(endpoint, {
             headers: { apikey: SUPABASE_PUBLISHABLE_KEY }
           });
-          if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+
+          if (!response.ok) {
+            throw new Error(`${response.status}: ${await response.text()}`);
+          }
+
           plants = await response.json();
           renderHome();
 
-          if (selectedPlant) {
+          if (selectedPlant && !$("#detail-screen").hidden) {
             const id = selectedPlant.pot_id || selectedPlant.device_id;
-            const index = plants.findIndex((p) => (p.pot_id || p.device_id) === id);
-            if (index >= 0 && !$("#detail-screen").hidden) showPlant(index);
+            const index = plants.findIndex(
+              (plant) => (plant.pot_id || plant.device_id) === id
+            );
+
+            if (index >= 0) showPlant(index);
           }
         } catch (error) {
           console.error(error);
-          $("#home-message").textContent = "Could not load plants. Check the browser console and Supabase read permissions.";
+          $("#home-message").textContent =
+            "Could not load plants. Check the browser console and Supabase read permissions.";
         }
       }
-
-      function restoreLogo() {
-        const saved = localStorage.getItem("plantjarvis-logo");
-        if (saved) applyLogo(saved);
-      }
-
-      function applyLogo(dataUrl) {
-        $("#brand-logo").src = dataUrl;
-        $("#brand-logo").hidden = false;
-        $("#brand-leaf").hidden = true;
-        $("#site-icon").href = dataUrl;
-      }
-
-      $("#logo-file").addEventListener("change", (event) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        if (file.size > 1024 * 1024) {
-          alert("Please choose a logo smaller than 1 MB.");
-          event.target.value = "";
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = String(reader.result);
-          try {
-            localStorage.setItem("plantjarvis-logo", dataUrl);
-            applyLogo(dataUrl);
-          } catch {
-            alert("The logo could not be saved in this browser. Try a smaller image.");
-          }
-        };
-        reader.readAsDataURL(file);
-      });
 
       const dialog = $("#add-dialog");
+
       $("#add-open").addEventListener("click", () => dialog.showModal());
+
       $("#close-dialog").addEventListener("click", () => {
         stopScanner();
         dialog.close();
       });
+
       $("#back-button").addEventListener("click", () => {
         $("#detail-screen").hidden = true;
         $("#home-screen").hidden = false;
@@ -358,65 +400,91 @@
 
       function stopScanner() {
         scanActive = false;
-        if (cameraStream) cameraStream.getTracks().forEach((track) => track.stop());
+
+        if (cameraStream) {
+          cameraStream.getTracks().forEach((track) => track.stop());
+        }
+
         cameraStream = null;
         $("#qr-video").hidden = true;
       }
 
       $("#scan-button").addEventListener("click", async () => {
         const video = $("#qr-video");
+
         if (!("BarcodeDetector" in window)) {
-          $("#form-message").textContent = "QR scanning is not supported in this browser. Enter the device ID manually.";
+          $("#form-message").textContent =
+            "QR scanning is not supported in this browser. Enter the device ID manually.";
           return;
         }
+
         try {
-          cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+          cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment" }
+          });
+
           video.srcObject = cameraStream;
           video.hidden = false;
           await video.play();
           scanActive = true;
+
           const detector = new BarcodeDetector({ formats: ["qr_code"] });
           $("#form-message").textContent = "Point the camera at the pot’s QR code.";
+
           const scan = async () => {
             if (!scanActive) return;
+
             try {
               const codes = await detector.detect(video);
+
               if (codes.length) {
                 let result = codes[0].rawValue.trim();
+
                 try {
                   const parsed = new URL(result);
-                  result = parsed.searchParams.get("device_id") || parsed.searchParams.get("id") || parsed.searchParams.get("t") || result;
+                  result =
+                    parsed.searchParams.get("device_id") ||
+                    parsed.searchParams.get("id") ||
+                    parsed.searchParams.get("t") ||
+                    result;
                 } catch {}
+
                 $("#new-device").value = result;
                 $("#form-message").textContent = "QR code scanned.";
                 stopScanner();
                 return;
               }
             } catch {}
+
             if (scanActive) requestAnimationFrame(scan);
           };
+
           requestAnimationFrame(scan);
         } catch (error) {
           console.error(error);
-          $("#form-message").textContent = "Could not access the camera. Allow camera permission or enter the ID manually.";
+          $("#form-message").textContent =
+            "Could not access the camera. Allow camera permission or enter the ID manually.";
           stopScanner();
         }
       });
 
       $("#add-form").addEventListener("submit", async (event) => {
         event.preventDefault();
-        const save = $("#save-pot");
+
+        const saveButton = $("#save-pot");
         const message = $("#form-message");
         const name = $("#new-name").value.trim();
         const plant = $("#new-plant").value.trim();
         const deviceId = $("#new-device").value.trim();
+
         if (!name || !deviceId) {
           message.textContent = "Enter a pot name and device ID.";
           return;
         }
 
-        save.disabled = true;
+        saveButton.disabled = true;
         message.textContent = "Adding your pot…";
+
         try {
           const response = await fetch(`${SUPABASE_URL}/rest/v1/${POT_TABLE}`, {
             method: "POST",
@@ -425,20 +493,30 @@
               "Content-Type": "application/json",
               Prefer: "return=minimal"
             },
-            body: JSON.stringify({ name, device_id: deviceId, pflanze: plant || null })
+            body: JSON.stringify({
+              name,
+              device_id: deviceId,
+              pflanze: plant || null
+            })
           });
-          if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+
+          if (!response.ok) {
+            throw new Error(`${response.status}: ${await response.text()}`);
+          }
+
           stopScanner();
           $("#add-form").reset();
           dialog.close();
           await loadPlants();
+
           $("#home-screen").hidden = false;
           $("#detail-screen").hidden = true;
         } catch (error) {
           console.error(error);
-          message.textContent = "Could not add the pot. Check the table name, column names, and Supabase INSERT permissions.";
+          message.textContent =
+            "Could not add the pot. Check the table name, column names, and Supabase INSERT permissions.";
         } finally {
-          save.disabled = false;
+          saveButton.disabled = false;
         }
       });
 
@@ -449,86 +527,221 @@
         }
       });
 
-      restoreLogo();
+      restoreLogoIfAvailable();
       loadPlants();
       setInterval(loadPlants, 60000);
+
+      function restoreLogoIfAvailable() {
+        // The logo file is served from public/logo.png.
+        // This checks that it loaded and logs a useful hint if the path is wrong.
+        const logo = document.querySelector(".brand-logo");
+        logo.addEventListener("error", () => {
+          console.error("Logo not found. Confirm the file is public/logo.png.");
+        });
+      }
     </script>
   </body>
 </html>
 
 <style>
   :global(*) { box-sizing: border-box; }
-  :global(body) { margin: 0; padding: 30px 18px; min-height: 100vh; background: #f3f7ef; color: #203629; font-family: system-ui, sans-serif; }
+  :global(body) {
+    margin: 0;
+    padding: 30px 18px;
+    min-height: 100vh;
+    background: #f3f7ef;
+    color: #203629;
+    font-family: system-ui, sans-serif;
+  }
   :global(button), :global(input) { font: inherit; }
   [hidden] { display: none !important; }
+
   main { max-width: 1000px; margin: 0 auto; }
-  .topbar, .brand, .header-actions, .intro, .plant-head, footer, .dialog-head, .device-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+
+  .topbar, .brand, .intro, .plant-head, footer, .dialog-head, .device-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
   .topbar { margin-bottom: 42px; }
   .brand { justify-content: flex-start; }
-  .brand-logo { width: 54px; height: 54px; object-fit: contain; border-radius: 12px; }
-  .brand-leaf { font-size: 42px; }
+  .brand-logo {
+    width: 58px;
+    height: 58px;
+    object-fit: contain;
+    border-radius: 12px;
+  }
+
   h1, h2, p { margin: 0; }
   h1 { font-size: 27px; }
-  .brand p, .muted { color: #718074; margin-top: 5px; }
-  .button, .upload-button { border: 0; border-radius: 12px; padding: 12px 16px; background: #38734e; color: white; cursor: pointer; font-weight: 650; }
-  .upload-button { background: #e5eee1; color: #315f40; }
+  .brand p, .muted { margin-top: 5px; color: #718074; }
+
+  .button {
+    border: 0;
+    border-radius: 12px;
+    padding: 12px 16px;
+    background: #38734e;
+    color: white;
+    cursor: pointer;
+    font-weight: 650;
+  }
   .button:hover { background: #2c5d3e; }
   .button:disabled { opacity: .6; cursor: wait; }
+
   .intro { margin-bottom: 24px; }
-  .eyebrow { margin-bottom: 7px; color: #6b886d; font-size: 12px; font-weight: 750; letter-spacing: 1.4px; }
+  .eyebrow {
+    margin-bottom: 7px;
+    color: #6b886d;
+    font-size: 12px;
+    font-weight: 750;
+    letter-spacing: 1.4px;
+  }
   h2 { font-size: clamp(25px, 4vw, 34px); }
-  .date-box { text-align: right; color: #54715c; line-height: 1.7; }
-  .message { color: #68796c; padding: 15px 0; }
-  .plant-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-  .plant-tile { display: flex; align-items: center; gap: 16px; width: 100%; padding: 20px; text-align: left; border: 1px solid #e2eadf; border-radius: 18px; background: white; color: #203629; cursor: pointer; box-shadow: 0 8px 24px #26462b0a; }
+  .date-box { color: #54715c; line-height: 1.7; text-align: right; }
+  .message { padding: 15px 0; color: #68796c; }
+
+  .plant-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .plant-tile {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    padding: 20px;
+    border: 1px solid #e2eadf;
+    border-radius: 18px;
+    background: white;
+    color: #203629;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: 0 8px 24px #26462b0a;
+  }
   .plant-tile:hover { border-color: #82a982; transform: translateY(-1px); }
-  .plant-tile.critical { animation: critical-blink 1s infinite; border-color: #c83131; }
+  .plant-tile.critical { animation: critical-blink 1s infinite; }
   .tile-icon { font-size: 32px; }
-  .tile-info { display: grid; gap: 5px; flex: 1; min-width: 0; }
+  .tile-info { display: grid; flex: 1; gap: 5px; min-width: 0; }
   .tile-info strong { font-size: 18px; }
   .tile-info small { color: #718074; overflow-wrap: anywhere; }
-  .tile-status, .status { padding: 8px 11px; border-radius: 99px; background: #e9f5e7; color: #347044; font-size: 12px; font-weight: 750; white-space: nowrap; }
+
+  .tile-status, .status {
+    padding: 8px 11px;
+    border-radius: 99px;
+    background: #e9f5e7;
+    color: #347044;
+    font-size: 12px;
+    font-weight: 750;
+    white-space: nowrap;
+  }
   .tile-status.warning, .status.warning { background: #fff2d9; color: #8a5a00; }
   .tile-status.critical, .status.critical { background: #c83131; color: white; }
-  .detail-screen { margin-top: 10px; }
-  .back-button { margin: 0 0 14px; padding: 8px 0; border: 0; background: transparent; color: #38734e; cursor: pointer; font-weight: 700; }
-  .detail-card { padding: 30px; background: white; border: 1px solid #e2eadf; border-radius: 24px; box-shadow: 0 12px 36px #26462b12; }
+
+  .siren {
+    display: inline-block;
+    transform-origin: center;
+    animation: siren-flash .65s steps(2, end) infinite;
+  }
+  @keyframes siren-flash {
+    0%, 100% { opacity: 1; filter: drop-shadow(0 0 2px #e00000); }
+    50% { opacity: .35; filter: drop-shadow(0 0 9px #ff0000); }
+  }
+  @keyframes critical-blink {
+    0%, 100% { background-color: white; box-shadow: 0 0 0 2px #d52626; }
+    50% { background-color: #ffe1e1; box-shadow: 0 0 0 5px #d52626; }
+  }
+
+  .back-button {
+    margin: 0 0 14px;
+    padding: 8px 0;
+    border: 0;
+    background: transparent;
+    color: #38734e;
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .detail-card {
+    padding: 30px;
+    border: 1px solid #e2eadf;
+    border-radius: 24px;
+    background: white;
+    box-shadow: 0 12px 36px #26462b12;
+  }
   .detail-card.critical { animation: critical-blink 1s infinite; }
   .plant-head { padding-bottom: 22px; border-bottom: 1px solid #e8eee5; }
-  .readings { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0 26px; }
+
+  .readings {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 20px 0 26px;
+  }
   .reading { padding: 20px; border-radius: 16px; background: #f8faf6; }
   .reading.out-of-range { border: 1px solid #e2a1a1; }
   .reading-label { color: #718074; }
   .reading-value { margin: 8px 0 14px; font-size: 27px; font-weight: 750; }
   .gauge { position: relative; height: 12px; margin: 12px 0 10px; border-radius: 20px; background: #e4eadf; }
   .target { position: absolute; height: 100%; border-radius: 20px; background: #cfe2c8; }
-  .marker { position: absolute; top: -4px; width: 20px; height: 20px; border: 3px solid white; border-radius: 50%; background: #43804d; box-shadow: 0 0 0 1px #43804d; transform: translateX(-50%); }
+  .marker {
+    position: absolute;
+    top: -4px;
+    width: 20px;
+    height: 20px;
+    border: 3px solid white;
+    border-radius: 50%;
+    background: #43804d;
+    box-shadow: 0 0 0 1px #43804d;
+    transform: translateX(-50%);
+  }
   .out-of-range .marker { background: #c64b3d; box-shadow: 0 0 0 1px #c64b3d; }
   .reading small { color: #718071; }
-  footer { border-top: 1px solid #e6ece3; padding-top: 18px; color: #54715c; flex-wrap: wrap; }
-  .small-note { margin-top: 24px; text-align: center; color: #829084; font-size: 13px; }
-  dialog { width: min(560px, calc(100% - 28px)); padding: 26px; border: 1px solid #dfe8dc; border-radius: 22px; color: #203629; box-shadow: 0 24px 80px #17291c44; }
+  footer {
+    flex-wrap: wrap;
+    padding-top: 18px;
+    border-top: 1px solid #e6ece3;
+    color: #54715c;
+  }
+  .small-note { margin-top: 24px; color: #829084; font-size: 13px; text-align: center; }
+
+  dialog {
+    width: min(560px, calc(100% - 28px));
+    padding: 26px;
+    border: 1px solid #dfe8dc;
+    border-radius: 22px;
+    color: #203629;
+    box-shadow: 0 24px 80px #17291c44;
+  }
   dialog::backdrop { background: #14201888; }
   .dialog-head { margin-bottom: 22px; }
-  .close-button { border: 0; background: transparent; font-size: 30px; cursor: pointer; color: #617164; }
+  .close-button { border: 0; background: transparent; color: #617164; font-size: 30px; cursor: pointer; }
   form > label { display: block; margin: 14px 0 7px; font-weight: 650; }
-  form input { width: 100%; padding: 12px; border: 1px solid #ccd8ca; border-radius: 10px; background: white; color: #203629; }
+  form input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ccd8ca;
+    border-radius: 10px;
+    background: white;
+    color: #203629;
+  }
   .device-row input { min-width: 0; }
   .secondary { flex: 0 0 auto; background: #e5eee1; color: #315f40; }
   .form-message { min-height: 24px; margin: 11px 0; color: #68796c; font-size: 14px; }
-  #qr-video { width: 100%; max-height: 260px; object-fit: cover; margin-top: 10px; border-radius: 12px; background: #17291c; }
+  #qr-video { width: 100%; max-height: 260px; margin-top: 10px; border-radius: 12px; background: #17291c; object-fit: cover; }
   .save-button { width: 100%; margin-top: 8px; }
-  @keyframes critical-blink {
-    0%, 100% { background-color: white; box-shadow: 0 0 0 2px #d52626; }
-    50% { background-color: #ffe1e1; box-shadow: 0 0 0 5px #d52626; }
-  }
+
   @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+    }
   }
+
   @media (max-width: 650px) {
     :global(body) { padding: 22px 13px; }
     .topbar, .intro, .plant-head { align-items: flex-start; flex-direction: column; }
-    .header-actions { width: 100%; flex-wrap: wrap; }
     .date-box { text-align: left; }
     .plant-list, .readings { grid-template-columns: 1fr; }
     .detail-card { padding: 21px; }
