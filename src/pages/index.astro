@@ -27,7 +27,7 @@
           <div>
             <p class="eyebrow">DEINE PFLANZEN</p>
             <h2>Wähle einen Pflanzentopf</h2>
-            <p class="muted">Tippe auf eine Pflanze, um ihre aktuellen Messwerte zu sehen.</p>
+            <p class="muted">Tippe auf einen Topf, um die Messwerte anzusehen.</p>
           </div>
           <div class="date-box">
             <div id="today">—</div>
@@ -40,7 +40,10 @@
       </section>
 
       <section id="detail-screen" hidden>
-        <button id="back-button" class="back-button" type="button">← Zurück zu allen Pflanzen</button>
+        <div class="detail-actions">
+          <button id="back-button" class="back-button" type="button">← Zurück zu allen Pflanzen</button>
+          <button id="delete-open" class="delete-button" type="button">Topf löschen</button>
+        </div>
 
         <article id="detail-card" class="detail-card">
           <div class="plant-head">
@@ -73,7 +76,13 @@
           </div>
 
           <label for="new-name">Name des Topfs</label>
-          <input id="new-name" name="name" placeholder="z. B. Kaktus in der Küche" required maxlength="60" />
+          <input
+            id="new-name"
+            name="name"
+            placeholder="z. B. Demo-Topf 2"
+            required
+            maxlength="60"
+          />
 
           <label for="new-plant">Pflanzenart</label>
           <select id="new-plant" name="species_id" required>
@@ -82,13 +91,59 @@
 
           <label for="new-device">Geräte-ID</label>
           <div class="device-row">
-            <input id="new-device" name="device" placeholder="QR-Code scannen oder ID eingeben" required maxlength="200" />
+            <input
+              id="new-device"
+              name="device"
+              placeholder="QR-Code scannen oder ID eingeben"
+              required
+              maxlength="200"
+            />
             <button id="scan-button" class="button secondary" type="button">QR-Code scannen</button>
           </div>
 
           <video id="qr-video" playsinline muted hidden></video>
-          <p id="form-message" class="form-message">Scanne den QR-Code am Sensor oder gib die Geräte-ID ein.</p>
+          <p id="form-message" class="form-message" aria-live="polite">
+            Scanne den QR-Code am Sensor oder gib die Geräte-ID ein.
+          </p>
           <button id="save-pot" class="button save-button" type="submit">Topf speichern</button>
+        </form>
+      </dialog>
+
+      <dialog id="delete-dialog">
+        <form id="delete-form">
+          <div class="dialog-head">
+            <div>
+              <p class="eyebrow">ENDGÜLTIGE AKTION</p>
+              <h2>Diesen Topf löschen?</h2>
+            </div>
+            <button
+              id="delete-cancel-top"
+              class="close-button"
+              type="button"
+              aria-label="Schließen"
+            >×</button>
+          </div>
+
+          <p id="delete-pot-label" class="muted"></p>
+          <p class="delete-instruction">Zur Bestätigung bitte <strong>DELETE</strong> eingeben.</p>
+
+          <label for="delete-confirmation">Bestätigung</label>
+          <input
+            id="delete-confirmation"
+            name="confirmation"
+            autocomplete="off"
+            placeholder="DELETE eingeben"
+            required
+          />
+
+          <p id="delete-message" class="form-message" aria-live="polite"></p>
+
+          <div class="delete-actions">
+            <button id="delete-cancel" class="button secondary" type="button">Abbrechen</button>
+            <button id="delete-confirm" class="delete-button" type="submit" disabled>
+              Topf löschen
+            </button>
+          </div>
         </form>
       </dialog>
 
@@ -106,12 +161,15 @@
       const $ = (selector) => document.querySelector(selector);
 
       let plants = [];
-      let selectedPlant = null;
       let species = [];
+      let selectedPlant = null;
       let cameraStream = null;
       let scannerControls = null;
       let scanActive = false;
       let scannedQrText = "";
+
+      const addDialog = $("#add-dialog");
+      const deleteDialog = $("#delete-dialog");
 
       function updateDate() {
         const now = new Date();
@@ -226,8 +284,8 @@
           const name = document.createElement("strong");
           name.textContent = plant.pflanze || plant.name || "Pflanze";
 
-          const pot = document.createElement("small");
-          pot.textContent = plant.name ? `Topf: ${plant.name}` : "Pflanzentopf";
+          const potName = document.createElement("small");
+          potName.textContent = plant.name ? `Topf: ${plant.name}` : "Pflanzentopf";
 
           const summary = document.createElement("span");
           summary.className = "tile-summary";
@@ -238,7 +296,7 @@
           summary.textContent =
             `Temperatur ${temperature === null ? "—" : `${temperature.toFixed(1)} °C`} · Bodenfeuchtigkeit ${soil === null ? "—" : `${soil}%`}`;
 
-          info.append(name, pot, summary);
+          info.append(name, potName, summary);
 
           const badge = document.createElement("span");
           badge.className = `tile-status ${state}`;
@@ -272,12 +330,12 @@
           : "Keine Pflanzenarten gefunden";
         select.append(placeholder);
 
-        species.forEach((item) => {
+        for (const item of species) {
           const option = document.createElement("option");
           option.value = String(item.id);
           option.textContent = item.name_de || item.name_lat || `Pflanzenart ${item.id}`;
           select.append(option);
-        });
+        }
 
         if (species.some((item) => String(item.id) === currentValue)) {
           select.value = currentValue;
@@ -302,13 +360,13 @@
           populateSpeciesDropdown();
 
           if (!species.length) {
-            $("#form-message").textContent =
-              "In plant_species wurden keine Pflanzenarten gefunden.";
+            $("#form-message").textContent = "In plant_species wurden keine Arten gefunden.";
           }
         } catch (error) {
           console.error(error);
           species = [];
-          select.innerHTML = '<option value="">Pflanzenarten konnten nicht geladen werden</option>';
+          select.innerHTML =
+            '<option value="">Pflanzenarten konnten nicht geladen werden</option>';
           $("#form-message").textContent =
             `Pflanzenarten konnten nicht geladen werden: ${error.message}`;
         }
@@ -403,8 +461,10 @@
 
         $("#home-screen").hidden = true;
         $("#detail-screen").hidden = false;
-        $("#plant-name").textContent = selectedPlant.pflanze || selectedPlant.name || "Pflanze";
-        $("#pot-name").textContent = selectedPlant.name ? `Topf: ${selectedPlant.name}` : "";
+        $("#plant-name").textContent =
+          selectedPlant.pflanze || selectedPlant.name || "Pflanze";
+        $("#pot-name").textContent =
+          selectedPlant.name ? `Topf: ${selectedPlant.name}` : "";
 
         const badge = $("#plant-status");
         badge.className = `status ${state}`;
@@ -468,12 +528,18 @@
           renderHome();
 
           if (selectedPlant && !$("#detail-screen").hidden) {
-            const id = selectedPlant.pot_id || selectedPlant.device_id;
+            const selectedId = selectedPlant.pot_id || selectedPlant.device_id;
             const index = plants.findIndex(
-              (plant) => (plant.pot_id || plant.device_id) === id
+              (plant) => (plant.pot_id || plant.device_id) === selectedId
             );
 
-            if (index >= 0) showPlant(index);
+            if (index >= 0) {
+              showPlant(index);
+            } else {
+              selectedPlant = null;
+              $("#detail-screen").hidden = true;
+              $("#home-screen").hidden = false;
+            }
           }
         } catch (error) {
           console.error(error);
@@ -481,23 +547,6 @@
             `Pflanzen konnten nicht geladen werden: ${error.message}`;
         }
       }
-
-      const dialog = $("#add-dialog");
-
-      $("#add-open").addEventListener("click", async () => {
-        dialog.showModal();
-        await loadSpecies();
-      });
-
-      $("#close-dialog").addEventListener("click", () => {
-        stopScanner();
-        dialog.close();
-      });
-
-      $("#back-button").addEventListener("click", () => {
-        $("#detail-screen").hidden = true;
-        $("#home-screen").hidden = false;
-      });
 
       function stopScanner() {
         scanActive = false;
@@ -519,10 +568,10 @@
         const text = String(rawValue || "").trim();
 
         try {
-          const parsed = new URL(text);
-          return parsed.searchParams.get("device_id") ||
-            parsed.searchParams.get("id") ||
-            parsed.searchParams.get("t") ||
+          const url = new URL(text);
+          return url.searchParams.get("device_id") ||
+            url.searchParams.get("id") ||
+            url.searchParams.get("t") ||
             text;
         } catch {
           return text;
@@ -603,6 +652,23 @@
         return true;
       }
 
+      $("#add-open").addEventListener("click", async () => {
+        $("#form-message").textContent =
+          "Scanne den QR-Code am Sensor oder gib die Geräte-ID ein.";
+        addDialog.showModal();
+        await loadSpecies();
+      });
+
+      $("#close-dialog").addEventListener("click", () => {
+        stopScanner();
+        addDialog.close();
+      });
+
+      $("#back-button").addEventListener("click", () => {
+        $("#detail-screen").hidden = true;
+        $("#home-screen").hidden = false;
+      });
+
       $("#scan-button").addEventListener("click", async () => {
         const video = $("#qr-video");
         const button = $("#scan-button");
@@ -658,8 +724,6 @@
         message.textContent = "Topf wird gespeichert …";
 
         try {
-          const qrCode = scannedQrText || deviceId;
-
           const response = await fetch(`${SUPABASE_URL}/rest/v1/${POT_TABLE}`, {
             method: "POST",
             headers: {
@@ -671,7 +735,7 @@
               name,
               species_id: Number(speciesId),
               device_id: deviceId,
-              qr_code: qrCode
+              qr_code: scannedQrText || deviceId
             })
           });
 
@@ -682,9 +746,9 @@
           stopScanner();
           $("#add-form").reset();
           scannedQrText = "";
-          dialog.close();
+          addDialog.close();
 
-          await Promise.all([loadPlants(), loadSpecies()]);
+          await loadPlants();
 
           $("#home-screen").hidden = false;
           $("#detail-screen").hidden = true;
@@ -696,12 +760,83 @@
         }
       });
 
-      dialog.addEventListener("click", (event) => {
-        if (event.target === dialog) {
-          stopScanner();
-          dialog.close();
+      $("#delete-open").addEventListener("click", () => {
+        if (!selectedPlant) return;
+
+        const label =
+          selectedPlant.name || selectedPlant.pflanze || "Diesen Topf";
+        $("#delete-pot-label").textContent = `Du bist dabei, „${label}“ zu löschen.`;
+        $("#delete-confirmation").value = "";
+        $("#delete-confirm").disabled = true;
+        $("#delete-message").textContent = "";
+        deleteDialog.showModal();
+      });
+
+      $("#delete-cancel").addEventListener("click", () => deleteDialog.close());
+      $("#delete-cancel-top").addEventListener("click", () => deleteDialog.close());
+
+      $("#delete-confirmation").addEventListener("input", (event) => {
+        $("#delete-confirm").disabled = event.target.value.trim() !== "DELETE";
+      });
+
+      $("#delete-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        const message = $("#delete-message");
+        const confirmation = $("#delete-confirmation").value.trim();
+        const confirmButton = $("#delete-confirm");
+
+        if (confirmation !== "DELETE") {
+          message.textContent = "Gib DELETE genau so ein, um zu bestätigen.";
+          return;
+        }
+
+        const potId = selectedPlant?.pot_id;
+
+        if (!potId) {
+          message.textContent = "Der Topf konnte nicht identifiziert werden (pot_id fehlt).";
+          return;
+        }
+
+        confirmButton.disabled = true;
+        message.textContent = "Topf wird gelöscht …";
+
+        try {
+          const response = await fetch(
+            `${SUPABASE_URL}/rest/v1/${POT_TABLE}?id=eq.${encodeURIComponent(potId)}`,
+            {
+              method: "DELETE",
+              headers: {
+                apikey: SUPABASE_PUBLISHABLE_KEY,
+                Prefer: "return=minimal"
+              }
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error(`${response.status}: ${await response.text()}`);
+          }
+
+          deleteDialog.close();
+          selectedPlant = null;
+          $("#detail-screen").hidden = true;
+          $("#home-screen").hidden = false;
+          await loadPlants();
+        } catch (error) {
+          console.error(error);
+          message.textContent = `Löschen fehlgeschlagen: ${error.message}`;
+          confirmButton.disabled = false;
         }
       });
+
+      for (const dialog of [addDialog, deleteDialog]) {
+        dialog.addEventListener("click", (event) => {
+          if (event.target === dialog) {
+            stopScanner();
+            dialog.close();
+          }
+        });
+      }
 
       $("#brand-logo").addEventListener("error", () => {
         console.error("Logo nicht gefunden. Prüfe, ob die Datei unter public/logo.png liegt.");
@@ -711,445 +846,368 @@
       loadSpecies();
       setInterval(loadPlants, 60000);
     </script>
+
+    <style is:global>
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 34px 20px;
+        min-height: 100vh;
+        background: #f3f7ef;
+        color: #203629;
+        font-family: system-ui, sans-serif;
+      }
+
+      button, input, select { font: inherit; }
+      [hidden] { display: none !important; }
+      main { max-width: 1080px; margin: 0 auto; }
+
+      .topbar, .brand, .intro, .plant-head, footer, .dialog-head, .device-row,
+      .detail-actions, .delete-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+      }
+
+      .topbar { margin-bottom: 46px; }
+      .brand { justify-content: flex-start; gap: 20px; }
+
+      .brand-logo {
+        display: block;
+        width: 112px;
+        height: 112px;
+        object-fit: contain;
+        border-radius: 20px;
+      }
+
+      h1, h2, p { margin: 0; }
+      h1 { font-size: 30px; letter-spacing: -.6px; }
+      .brand p, .muted { margin-top: 6px; color: #718074; }
+      .intro { margin-bottom: 25px; }
+      h2 { font-size: clamp(26px, 4vw, 35px); }
+
+      .eyebrow {
+        margin-bottom: 8px;
+        color: #6b886d;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 1.5px;
+      }
+
+      .button {
+        border: 0;
+        border-radius: 14px;
+        padding: 13px 18px;
+        background: #38734e;
+        color: white;
+        cursor: pointer;
+        font-weight: 700;
+        box-shadow: 0 6px 16px #38734e22;
+      }
+
+      .button:hover { background: #2c5d3e; }
+      .button:disabled { opacity: .6; cursor: wait; }
+      .date-box { color: #54715c; line-height: 1.8; text-align: right; }
+      .message { padding: 15px 0; color: #68796c; }
+
+      .plant-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .plant-tile {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 17px;
+        width: 100%;
+        min-height: 132px;
+        padding: 23px;
+        overflow: hidden;
+        border: 1px solid #e1e9dd;
+        border-radius: 22px;
+        background: linear-gradient(135deg, #fff 0%, #f8fbf5 100%);
+        color: #203629;
+        text-align: left;
+        cursor: pointer;
+        box-shadow: 0 10px 28px #26462b0c;
+        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+      }
+
+      .plant-tile::before {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 6px;
+        background: #8db583;
+        content: "";
+      }
+
+      .plant-tile:hover, .plant-tile:focus-visible {
+        transform: translateY(-3px);
+        border-color: #9dbb96;
+        box-shadow: 0 16px 35px #26462b17;
+      }
+
+      .plant-tile:focus-visible {
+        outline: 3px solid #75a66e;
+        outline-offset: 3px;
+      }
+
+      .plant-tile.critical { animation: critical-blink 1s infinite; }
+
+      .tile-icon {
+        display: grid;
+        flex: 0 0 58px;
+        width: 58px;
+        height: 58px;
+        place-items: center;
+        border-radius: 18px;
+        background: #eaf3e5;
+        font-size: 31px;
+      }
+
+      .tile-info { display: grid; flex: 1; gap: 6px; min-width: 0; }
+      .tile-info strong { font-size: 19px; }
+      .tile-info small, .tile-summary { color: #718074; overflow-wrap: anywhere; }
+      .tile-summary { font-size: 12px; }
+
+      .tile-status, .status {
+        padding: 9px 12px;
+        border-radius: 99px;
+        background: #e9f5e7;
+        color: #347044;
+        font-size: 12px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .tile-status.achtung, .status.achtung {
+        background: #fff2d9;
+        color: #8a5a00;
+      }
+
+      .tile-status.kritisch, .status.kritisch {
+        background: #c83131;
+        color: white;
+      }
+
+      .tile-arrow { color: #78917b; font-size: 30px; line-height: 1; }
+
+      .siren {
+        display: inline-block;
+        transform-origin: center;
+        animation: siren-flash .65s steps(2, end) infinite;
+      }
+
+      @keyframes siren-flash {
+        0%, 100% { opacity: 1; filter: drop-shadow(0 0 2px #e00000); }
+        50% { opacity: .35; filter: drop-shadow(0 0 9px #ff0000); }
+      }
+
+      @keyframes critical-blink {
+        0%, 100% { background-color: #fff; box-shadow: 0 0 0 2px #d52626; }
+        50% { background-color: #ffe1e1; box-shadow: 0 0 0 5px #d52626; }
+      }
+
+      .detail-actions { margin-bottom: 15px; }
+      .back-button {
+        padding: 8px 0;
+        border: 0;
+        background: transparent;
+        color: #38734e;
+        cursor: pointer;
+        font-weight: 750;
+      }
+
+      .delete-button {
+        border: 0;
+        border-radius: 14px;
+        padding: 13px 18px;
+        background: #b83232;
+        color: white;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 700;
+      }
+
+      .delete-button:hover { background: #922727; }
+      .delete-button:disabled { opacity: .5; cursor: not-allowed; }
+
+      .detail-card {
+        padding: 32px;
+        border: 1px solid #e2eadf;
+        border-radius: 26px;
+        background: white;
+        box-shadow: 0 12px 36px #26462b12;
+      }
+
+      .detail-card.critical { animation: critical-blink 1s infinite; }
+      .plant-head { padding-bottom: 23px; border-bottom: 1px solid #e8eee5; }
+
+      .readings {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        margin: 23px 0 27px;
+      }
+
+      .reading {
+        padding: 21px;
+        border: 1px solid #edf1e9;
+        border-radius: 19px;
+        background: #f8faf6;
+      }
+
+      .reading.out-of-range {
+        border-color: #e5a4a4;
+        background: #fff8f7;
+      }
+
+      .reading-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .reading-label { color: #718074; font-weight: 650; }
+      .reading-value { color: #203629; font-size: 25px; white-space: nowrap; }
+
+      .gauge {
+        position: relative;
+        height: 15px;
+        margin: 25px 8px 13px;
+        border-radius: 99px;
+        background: linear-gradient(90deg, #f1d9d4, #f5edda 50%, #f1d9d4);
+        box-shadow: inset 0 1px 3px #263b2c1c;
+      }
+
+      .target {
+        position: absolute;
+        top: 0;
+        height: 100%;
+        border: 1px solid #72a56e;
+        border-radius: 99px;
+        background: #9dcc91;
+        box-shadow: 0 0 0 3px #9dcc9128;
+      }
+
+      .marker {
+        position: absolute;
+        top: 50%;
+        width: 20px;
+        height: 20px;
+        border: 3px solid white;
+        border-radius: 6px;
+        background: #275f38;
+        box-shadow: 0 1px 5px #122f1b88;
+        transform: translate(-50%, -50%) rotate(45deg);
+      }
+
+      .out-of-range .marker { background: #c33b32; }
+
+      .gauge-legend {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        color: #718071;
+        font-size: 12px;
+      }
+
+      footer {
+        flex-wrap: wrap;
+        padding-top: 18px;
+        border-top: 1px solid #e6ece3;
+        color: #54715c;
+      }
+
+      .small-note {
+        margin-top: 25px;
+        color: #829084;
+        font-size: 13px;
+        text-align: center;
+      }
+
+      dialog {
+        width: min(560px, calc(100% - 28px));
+        padding: 27px;
+        border: 1px solid #dfe8dc;
+        border-radius: 23px;
+        color: #203629;
+        box-shadow: 0 24px 80px #17291c44;
+      }
+
+      dialog::backdrop { background: #14201888; }
+      .dialog-head { margin-bottom: 22px; }
+
+      .close-button {
+        border: 0;
+        background: transparent;
+        color: #617164;
+        font-size: 30px;
+        cursor: pointer;
+      }
+
+      form > label { display: block; margin: 14px 0 7px; font-weight: 700; }
+
+      form input, form select {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ccd8ca;
+        border-radius: 10px;
+        background: white;
+        color: #203629;
+      }
+
+      form input:focus, form select:focus {
+        outline: 3px solid #9dcc914c;
+        border-color: #75a66e;
+      }
+
+      .device-row input { min-width: 0; }
+      .secondary { flex: 0 0 auto; background: #e5eee1; color: #315f40; box-shadow: none; }
+      .form-message { min-height: 24px; margin: 11px 0; color: #68796c; font-size: 14px; }
+      .delete-instruction { margin-top: 16px; }
+
+      #qr-video {
+        width: 100%;
+        max-height: 300px;
+        margin-top: 10px;
+        border-radius: 14px;
+        background: #17291c;
+        object-fit: cover;
+      }
+
+      .save-button { width: 100%; margin-top: 8px; }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: .01ms !important;
+          animation-iteration-count: 1 !important;
+          scroll-behavior: auto !important;
+        }
+      }
+
+      @media (max-width: 700px) {
+        body { padding: 22px 14px; }
+        .topbar, .intro, .plant-head { align-items: flex-start; flex-direction: column; }
+        .brand-logo { width: 88px; height: 88px; }
+        .date-box { text-align: left; }
+        .plant-list, .readings { grid-template-columns: 1fr; }
+        .detail-card { padding: 22px; }
+      }
+
+      @media (max-width: 460px) {
+        .topbar { gap: 20px; }
+        .brand { gap: 13px; }
+        .brand-logo { width: 72px; height: 72px; }
+        .plant-tile { flex-wrap: wrap; padding: 18px; }
+        .tile-status { margin-left: 74px; }
+        .device-row, .detail-actions, .delete-actions { align-items: stretch; flex-direction: column; }
+      }
+    </style>
   </body>
 </html>
-
-<style>
-  :global(*) { box-sizing: border-box; }
-
-  :global(body) {
-    margin: 0;
-    padding: 34px 20px;
-    min-height: 100vh;
-    background: #f3f7ef;
-    color: #203629;
-    font-family: system-ui, sans-serif;
-  }
-
-  :global(button), :global(input), :global(select) { font: inherit; }
-  [hidden] { display: none !important; }
-  main { max-width: 1080px; margin: 0 auto; }
-
-  .topbar, .brand, .intro, .plant-head, footer, .dialog-head, .device-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 18px;
-  }
-
-  .topbar { margin-bottom: 46px; }
-  .brand { justify-content: flex-start; gap: 20px; }
-
-  .brand-logo {
-    display: block;
-    width: 112px;
-    height: 112px;
-    object-fit: contain;
-    border-radius: 20px;
-  }
-
-  h1, h2, p { margin: 0; }
-  h1 { font-size: 30px; letter-spacing: -.6px; }
-  .brand p, .muted { margin-top: 6px; color: #718074; }
-
-  .button {
-    border: 0;
-    border-radius: 14px;
-    padding: 13px 18px;
-    background: #38734e;
-    color: white;
-    cursor: pointer;
-    font-weight: 700;
-    box-shadow: 0 6px 16px #38734e22;
-  }
-
-  .button:hover { background: #2c5d3e; }
-  .button:disabled { opacity: .6; cursor: wait; }
-
-  .intro { margin-bottom: 25px; }
-
-  .eyebrow {
-    margin-bottom: 8px;
-    color: #6b886d;
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 1.5px;
-  }
-
-  h2 { font-size: clamp(26px, 4vw, 35px); }
-  .date-box { color: #54715c; line-height: 1.8; text-align: right; }
-  .message { padding: 15px 0; color: #68796c; }
-
-  .plant-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px;
-  }
-
-  .plant-tile {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 17px;
-    width: 100%;
-    min-height: 132px;
-    padding: 23px;
-    overflow: hidden;
-    border: 1px solid #e1e9dd;
-    border-radius: 22px;
-    background: linear-gradient(135deg, #fff 0%, #f8fbf5 100%);
-    color: #203629;
-    text-align: left;
-    cursor: pointer;
-    box-shadow: 0 10px 28px #26462b0c;
-    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
-  }
-
-  .plant-tile::before {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 6px;
-    height: 100%;
-    background: #8db583;
-    content: "";
-  }
-
-  .plant-tile:hover {
-    transform: translateY(-3px);
-    border-color: #9dbb96;
-    box-shadow: 0 16px 35px #26462b17;
-  }
-
-  .plant-tile.critical { animation: critical-blink 1s infinite; }
-
-  .tile-icon {
-    display: grid;
-    flex: 0 0 58px;
-    width: 58px;
-    height: 58px;
-    place-items: center;
-    border-radius: 18px;
-    background: #eaf3e5;
-    font-size: 31px;
-  }
-
-  .tile-info { display: grid; flex: 1; gap: 6px; min-width: 0; }
-  .tile-info strong { font-size: 19px; }
-  .tile-info small, .tile-summary { color: #718074; overflow-wrap: anywhere; }
-  .tile-summary { font-size: 12px; }
-
-  .tile-status, .status {
-    padding: 9px 12px;
-    border-radius: 99px;
-    background: #e9f5e7;
-    color: #347044;
-    font-size: 12px;
-    font-weight: 800;
-    white-space: nowrap;
-  }
-
-  .tile-status.achtung, .status.achtung {
-    background: #fff2d9;
-    color: #8a5a00;
-  }
-
-  .tile-status.kritisch, .status.kritisch {
-    background: #c83131;
-    color: white;
-  }
-
-  .tile-arrow { color: #78917b; font-size: 30px; line-height: 1; }
-
-  .siren {
-    display: inline-block;
-    transform-origin: center;
-    animation: siren-flash .65s steps(2, end) infinite;
-  }
-
-  @keyframes siren-flash {
-    0%, 100% { opacity: 1; filter: drop-shadow(0 0 2px #e00000); }
-    50% { opacity: .35; filter: drop-shadow(0 0 9px #ff0000); }
-  }
-
-  @keyframes critical-blink {
-    0%, 100% { background-color: #fff; box-shadow: 0 0 0 2px #d52626; }
-    50% { background-color: #ffe1e1; box-shadow: 0 0 0 5px #d52626; }
-  }
-
-  .back-button {
-    margin: 0 0 15px;
-    padding: 8px 0;
-    border: 0;
-    background: transparent;
-    color: #38734e;
-    cursor: pointer;
-    font-weight: 750;
-  }
-
-  .detail-card {
-    padding: 32px;
-    border: 1px solid #e2eadf;
-    border-radius: 26px;
-    background: white;
-    box-shadow: 0 12px 36px #26462b12;
-  }
-
-  .detail-card.critical { animation: critical-blink 1s infinite; }
-  .plant-head { padding-bottom: 23px; border-bottom: 1px solid #e8eee5; }
-
-  .readings {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 18px;
-    margin: 23px 0 27px;
-  }
-
-  .reading {
-    padding: 21px;
-    border: 1px solid #edf1e9;
-    border-radius: 19px;
-    background: #f8faf6;
-  }
-
-  .reading.out-of-range {
-    border-color: #e5a4a4;
-    background: #fff8f7;
-  }
-
-  .reading-top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .reading-label { color: #718074; font-weight: 650; }
-  .reading-value { color: #203629; font-size: 25px; white-space: nowrap; }
-
-  .gauge {
-    position: relative;
-    height: 15px;
-    margin: 25px 8px 13px;
-    border-radius: 99px;
-    background: linear-gradient(90deg, #f1d9d4, #f5edda 50%, #f1d9d4);
-    box-shadow: inset 0 1px 3px #263b2c1c;
-  }
-
-  .target {
-    position: absolute;
-    top: 0;
-    height: 100%;
-    border: 1px solid #72a56e;
-    border-radius: 99px;
-    background: #9dcc91;
-    box-shadow: 0 0 0 3px #9dcc9128;
-  }
-
-  .marker {
-    position: absolute;
-    top: 50%;
-    width: 20px;
-    height: 20px;
-    border: 3px solid white;
-    border-radius: 6px;
-    background: #275f38;
-    box-shadow: 0 1px 5px #122f1b88;
-    transform: translate(-50%, -50%) rotate(45deg);
-  }
-
-  .out-of-range .marker { background: #c33b32; }
-
-  .gauge-legend {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    color: #718071;
-    font-size: 12px;
-  }
-
-  footer {
-    flex-wrap: wrap;
-    padding-top: 18px;
-    border-top: 1px solid #e6ece3;
-    color: #54715c;
-  }
-
-  .small-note {
-    margin-top: 25px;
-    color: #829084;
-    font-size: 13px;
-    text-align: center;
-  }
-
-  dialog {
-    width: min(560px, calc(100% - 28px));
-    padding: 27px;
-    border: 1px solid #dfe8dc;
-    border-radius: 23px;
-    color: #203629;
-    box-shadow: 0 24px 80px #17291c44;
-  }
-
-  dialog::backdrop { background: #14201888; }
-  .dialog-head { margin-bottom: 22px; }
-
-  .close-button {
-    border: 0;
-    background: transparent;
-    color: #617164;
-    font-size: 30px;
-    cursor: pointer;
-  }
-
-  form > label { display: block; margin: 14px 0 7px; font-weight: 700; }
-
-  form input, form select {
-    width: 100%;
-    padding: 12px;
-    border: 1px solid #ccd8ca;
-    border-radius: 10px;
-    background: white;
-    color: #203629;
-  }
-
-  form input:focus, form select:focus {
-    outline: 3px solid #9dcc914c;
-    border-color: #75a66e;
-  }
-
-  .device-row input { min-width: 0; }
-  .secondary { flex: 0 0 auto; background: #e5eee1; color: #315f40; box-shadow: none; }
-  .form-message { min-height: 24px; margin: 11px 0; color: #68796c; font-size: 14px; }
-
-  #qr-video {
-    width: 100%;
-    max-height: 300px;
-    margin-top: 10px;
-    border-radius: 14px;
-    background: #17291c;
-    object-fit: cover;
-  }
-
-  .save-button { width: 100%; margin-top: 8px; }
-
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-      animation-duration: .01ms !important;
-      animation-iteration-count: 1 !important;
-      scroll-behavior: auto !important;
-    }
-  }
-
-  @media (max-width: 700px) {
-    :global(body) { padding: 22px 14px; }
-    .topbar, .intro, .plant-head { align-items: flex-start; flex-direction: column; }
-    .brand-logo { width: 88px; height: 88px; }
-    .date-box { text-align: left; }
-    .plant-list, .readings { grid-template-columns: 1fr; }
-    .detail-card { padding: 22px; }
-  }
-
-  @media (max-width: 460px) {
-    .topbar { gap: 20px; }
-    .brand { gap: 13px; }
-    .brand-logo { width: 72px; height: 72px; }
-    .plant-tile { flex-wrap: wrap; padding: 18px; }
-    .tile-status { margin-left: 74px; }
-    .device-row { align-items: stretch; flex-direction: column; }
-  }
-</style>
-<style is:global>
-  .plant-tile {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 17px;
-    width: 100%;
-    min-height: 132px;
-    padding: 23px;
-    overflow: hidden;
-    border: 1px solid #e1e9dd;
-    border-radius: 22px;
-    background: linear-gradient(135deg, #fff 0%, #f8fbf5 100%);
-    color: #203629;
-    text-align: left;
-    font: inherit;
-    cursor: pointer;
-    box-shadow: 0 10px 28px #26462b0c;
-    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
-  }
-
-  .plant-tile::before {
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: 6px;
-    background: #8db583;
-    content: "";
-  }
-
-  .plant-tile:hover,
-  .plant-tile:focus-visible {
-    transform: translateY(-3px);
-    border-color: #9dbb96;
-    box-shadow: 0 16px 35px #26462b17;
-  }
-
-  .plant-tile:focus-visible {
-    outline: 3px solid #75a66e;
-    outline-offset: 3px;
-  }
-
-  .tile-icon {
-    display: grid;
-    flex: 0 0 58px;
-    width: 58px;
-    height: 58px;
-    place-items: center;
-    border-radius: 18px;
-    background: #eaf3e5;
-    font-size: 31px;
-  }
-
-  .tile-info {
-    display: grid;
-    flex: 1;
-    gap: 6px;
-    min-width: 0;
-  }
-
-  .tile-info strong { font-size: 19px; }
-  .tile-info small, .tile-summary { color: #718074; overflow-wrap: anywhere; }
-  .tile-summary { font-size: 12px; }
-
-  .tile-status, .status {
-    padding: 9px 12px;
-    border-radius: 99px;
-    background: #e9f5e7;
-    color: #347044;
-    font-size: 12px;
-    font-weight: 800;
-    white-space: nowrap;
-  }
-
-  .tile-status.achtung, .status.achtung {
-    background: #fff2d9;
-    color: #8a5a00;
-  }
-
-  .tile-status.kritisch, .status.kritisch {
-    background: #c83131;
-    color: white;
-  }
-
-  .tile-arrow {
-    color: #78917b;
-    font-size: 30px;
-    line-height: 1;
-  }
-
-  @media (max-width: 460px) {
-    .plant-tile { flex-wrap: wrap; padding: 18px; }
-    .tile-status { margin-left: 74px; }
-  }
-</style>
