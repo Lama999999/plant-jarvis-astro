@@ -4,239 +4,533 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3f7ef" />
+    <link id="site-icon" rel="icon" href="data:," />
     <title>PlantJarvis</title>
   </head>
+
   <body>
     <main>
-      <header>
-        <div class="brand">🌿 <div><h1>PlantJarvis</h1><p>Your plant, happily monitored</p></div></div>
-        <div class="date">
-          <div id="date">Loading date…</div>
-          <div id="season">Loading season…</div>
+      <header class="topbar">
+        <div class="brand">
+          <img id="brand-logo" class="brand-logo" alt="Your logo" hidden />
+          <span id="brand-leaf" class="brand-leaf">🌿</span>
+          <div>
+            <h1>PlantJarvis</h1>
+            <p>Your plants, happily monitored</p>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <label class="upload-button" for="logo-file">＋ Add logo</label>
+          <input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden />
+          <button id="add-open" class="button">＋ Add plant pot</button>
         </div>
       </header>
 
-      <section class="card">
-        <div class="plant-head">
+      <section id="home-screen">
+        <div class="intro">
           <div>
-            <p class="eyebrow">YOUR PLANT</p>
-            <h2 id="plant">Loading plant…</h2>
-            <p class="muted" id="pot-name"></p>
+            <p class="eyebrow">YOUR PLANTS</p>
+            <h2>Choose a plant</h2>
+            <p class="muted">Select a pot to see its latest readings.</p>
           </div>
-          <span class="status" id="status">Loading…</span>
+          <div class="date-box">
+            <div id="today">—</div>
+            <div id="season">—</div>
+          </div>
         </div>
 
-        <div id="message" class="message">Connecting to Supabase…</div>
-        <div id="readings" class="grid"></div>
-
-        <footer>
-          <span id="updated">Last measurement: —</span>
-          <span id="refreshed">Page loaded: —</span>
-        </footer>
+        <p id="home-message" class="message">Loading your plants…</p>
+        <div id="plant-list" class="plant-list"></div>
       </section>
+
+      <section id="detail-screen" hidden>
+        <button id="back-button" class="back-button">← All plants</button>
+        <article id="detail-card" class="detail-card">
+          <div class="plant-head">
+            <div>
+              <p class="eyebrow">PLANT DETAILS</p>
+              <h2 id="plant-name">—</h2>
+              <p id="pot-name" class="muted"></p>
+            </div>
+            <span id="plant-status" class="status">—</span>
+          </div>
+
+          <p id="detail-message" class="message"></p>
+          <div id="readings" class="readings"></div>
+
+          <footer>
+            <span id="last-measurement">Last measurement: —</span>
+            <span id="page-updated">Page updated: —</span>
+          </footer>
+        </article>
+      </section>
+
+      <dialog id="add-dialog">
+        <form id="add-form">
+          <div class="dialog-head">
+            <div>
+              <p class="eyebrow">NEW PLANT POT</p>
+              <h2>Add a pot</h2>
+            </div>
+            <button id="close-dialog" class="close-button" type="button" aria-label="Close">×</button>
+          </div>
+
+          <label for="new-name">Pot name</label>
+          <input id="new-name" name="name" placeholder="e.g. Kitchen cactus" required maxlength="60" />
+
+          <label for="new-plant">Plant species</label>
+          <input id="new-plant" name="plant" placeholder="e.g. Schwiegermuttersitz" maxlength="60" />
+
+          <label for="new-device">Device ID</label>
+          <div class="device-row">
+            <input id="new-device" name="device" placeholder="Scan QR or enter device ID" required maxlength="100" />
+            <button id="scan-button" class="button secondary" type="button">Scan QR</button>
+          </div>
+          <video id="qr-video" playsinline hidden></video>
+          <p id="form-message" class="form-message">Scan the pot’s QR code or enter its device ID.</p>
+
+          <button id="save-pot" class="button save-button" type="submit">Add plant pot</button>
+        </form>
+      </dialog>
+
+      <p class="small-note">Measurements refresh automatically. The logo is saved in this browser.</p>
     </main>
+
+    <script>
+      // Supabase project settings. This is a publishable key, not a secret key.
+      const SUPABASE_URL = "https://dzvzbvylebefxdhosisi.supabase.co";
+      const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_GC1g6g1Wl4V18vX44-9fMw_LHisOABS";
+
+      // Change this if your writable table has a different name.
+      const POT_TABLE = "pots";
+      const VIEW_NAME = "v_base_station";
+
+      const $ = (selector) => document.querySelector(selector);
+      let plants = [];
+      let selectedPlant = null;
+      let cameraStream = null;
+      let scanActive = false;
+
+      function updateDate() {
+        const now = new Date();
+        $("#today").textContent = now.toLocaleDateString(undefined, {
+          weekday: "long", year: "numeric", month: "long", day: "numeric"
+        });
+        const month = now.getMonth();
+        const season = month >= 2 && month <= 4 ? "Spring"
+          : month >= 5 && month <= 7 ? "Summer"
+          : month >= 8 && month <= 10 ? "Autumn" : "Winter";
+        $("#season").textContent = `Season: ${season}`;
+      }
+
+      function setPageUpdated() {
+        $("#page-updated").textContent =
+          `Page updated: ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+      }
+
+      function asNumber(value) {
+        if (value === null || value === undefined || value === "") return null;
+        const result = Number(value);
+        return Number.isFinite(result) ? result : null;
+      }
+
+      function getSeasonRanges(plant) {
+        const month = new Date().getMonth() + 1;
+        const winter = month >= 11 || month <= 3;
+        return {
+          tempMin: winter ? (plant.temp_min_winter ?? plant.temp_min) : plant.temp_min,
+          tempMax: winter ? (plant.temp_max_winter ?? plant.temp_max) : plant.temp_max,
+          soilMin: winter ? 0 : plant.soil_min,
+          soilMax: winter ? (plant.soil_max_winter ?? plant.soil_max) : plant.soil_max
+        };
+      }
+
+      function health(plant) {
+        const ranges = getSeasonRanges(plant);
+        const checks = [
+          [plant.temperature, ranges.tempMin, ranges.tempMax, false],
+          [plant.humidity, plant.humidity_min, plant.humidity_max, false],
+          [plant.light, plant.light_min, plant.light_max, false],
+          [plant.soil_moisture, ranges.soilMin, ranges.soilMax, true]
+        ];
+        let warning = false;
+
+        for (const [raw, rawLow, rawHigh, soil] of checks) {
+          const value = asNumber(raw);
+          const low = asNumber(rawLow);
+          const high = asNumber(rawHigh);
+          if (value === null || low === null || high === null || high <= low) continue;
+          if (value < low || value > high) {
+            warning = true;
+            const deviation = value < low ? low - value : value - high;
+            if ((soil && value < low) || deviation > 0.2 * (high - low)) return "critical";
+          }
+        }
+        return warning ? "warning" : "ok";
+      }
+
+      function renderHome() {
+        const list = $("#plant-list");
+        list.replaceChildren();
+
+        if (!plants.length) {
+          $("#home-message").textContent = "No plant pots found. Add one to get started.";
+          return;
+        }
+
+        $("#home-message").textContent = "";
+        plants.forEach((plant, index) => {
+          const card = document.createElement("button");
+          card.type = "button";
+          card.className = "plant-tile";
+          const state = health(plant);
+
+          if (state === "critical") card.classList.add("critical");
+          const icon = document.createElement("span");
+          icon.className = "tile-icon";
+          icon.textContent = "🪴";
+
+          const info = document.createElement("span");
+          info.className = "tile-info";
+          const name = document.createElement("strong");
+          name.textContent = plant.pflanze || plant.name || "Plant";
+          const pot = document.createElement("small");
+          pot.textContent = plant.name ? `Pot: ${plant.name}` : "Plant pot";
+          info.append(name, pot);
+
+          const badge = document.createElement("span");
+          badge.className = `tile-status ${state}`;
+          badge.textContent = state === "critical" ? "Critical" : state === "warning" ? "Check" : "OK";
+          card.append(icon, info, badge);
+          card.addEventListener("click", () => showPlant(index));
+          list.append(card);
+        });
+      }
+
+      function addReading(label, rawValue, unit, rawLow, rawHigh, decimals = 0) {
+        const value = asNumber(rawValue);
+        const low = asNumber(rawLow);
+        const high = asNumber(rawHigh);
+        const card = document.createElement("article");
+        card.className = "reading";
+
+        const title = document.createElement("div");
+        title.className = "reading-label";
+        title.textContent = label;
+
+        const val = document.createElement("div");
+        val.className = "reading-value";
+        val.textContent = value === null ? "—" : `${value.toFixed(decimals)} ${unit}`;
+
+        const gauge = document.createElement("div");
+        gauge.className = "gauge";
+        const target = document.createElement("div");
+        target.className = "target";
+        const marker = document.createElement("div");
+        marker.className = "marker";
+
+        const range = document.createElement("small");
+        if (low !== null && high !== null && high > low) {
+          const span = high - low;
+          const axisMin = low - span * 0.5;
+          const axisMax = high + span * 0.5;
+          target.style.left = `${((low - axisMin) / (axisMax - axisMin)) * 100}%`;
+          target.style.width = `${((high - low) / (axisMax - axisMin)) * 100}%`;
+          gauge.append(target);
+          if (value !== null) {
+            marker.style.left = `${Math.max(0, Math.min(100, ((value - axisMin) / (axisMax - axisMin)) * 100))}%`;
+            gauge.append(marker);
+            if (value < low || value > high) card.classList.add("out-of-range");
+          }
+          range.textContent = `Target: ${low}–${high} ${unit}`;
+        } else {
+          range.textContent = "Target range unavailable";
+        }
+        card.append(title, val, gauge, range);
+        $("#readings").append(card);
+      }
+
+      function showPlant(index) {
+        selectedPlant = plants[index];
+        if (!selectedPlant) return;
+
+        const status = health(selectedPlant);
+        $("#home-screen").hidden = true;
+        $("#detail-screen").hidden = false;
+
+        $("#plant-name").textContent = selectedPlant.pflanze || selectedPlant.name || "Plant";
+        $("#pot-name").textContent = selectedPlant.name ? `Pot: ${selectedPlant.name}` : "";
+        const badge = $("#plant-status");
+        badge.className = `status ${status}`;
+        badge.textContent = status === "critical" ? "● CRITICAL" : status === "warning" ? "● CHECK PLANT" : "● LOOKING GOOD";
+
+        const detailCard = $("#detail-card");
+        detailCard.classList.toggle("critical", status === "critical");
+
+        const age = asNumber(selectedPlant.age_min);
+        if (age === null || age < 0) {
+          $("#last-measurement").textContent = "Last measurement: time unavailable";
+        } else {
+          const measured = new Date(Date.now() - age * 60000);
+          $("#last-measurement").textContent =
+            `Last measurement: ${measured.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} (about ${age} min ago)`;
+        }
+
+        const ranges = getSeasonRanges(selectedPlant);
+        $("#readings").replaceChildren();
+        addReading("Temperature", selectedPlant.temperature, "°C", ranges.tempMin, ranges.tempMax, 1);
+        addReading("Air humidity", selectedPlant.humidity, "%", selectedPlant.humidity_min, selectedPlant.humidity_max);
+        addReading("Light", selectedPlant.light, "lx", selectedPlant.light_min, selectedPlant.light_max);
+        addReading("Soil moisture", selectedPlant.soil_moisture, "%", ranges.soilMin, ranges.soilMax);
+        $("#detail-message").textContent = age !== null && age > 180
+          ? `The latest measurement is about ${age} minutes old.`
+          : "";
+        setPageUpdated();
+      }
+
+      async function loadPlants() {
+        updateDate();
+        try {
+          const endpoint = `${SUPABASE_URL}/rest/v1/${VIEW_NAME}?select=*&order=name.asc`;
+          const response = await fetch(endpoint, {
+            headers: { apikey: SUPABASE_PUBLISHABLE_KEY }
+          });
+          if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+          plants = await response.json();
+          renderHome();
+
+          if (selectedPlant) {
+            const id = selectedPlant.pot_id || selectedPlant.device_id;
+            const index = plants.findIndex((p) => (p.pot_id || p.device_id) === id);
+            if (index >= 0 && !$("#detail-screen").hidden) showPlant(index);
+          }
+        } catch (error) {
+          console.error(error);
+          $("#home-message").textContent = "Could not load plants. Check the browser console and Supabase read permissions.";
+        }
+      }
+
+      function restoreLogo() {
+        const saved = localStorage.getItem("plantjarvis-logo");
+        if (saved) applyLogo(saved);
+      }
+
+      function applyLogo(dataUrl) {
+        $("#brand-logo").src = dataUrl;
+        $("#brand-logo").hidden = false;
+        $("#brand-leaf").hidden = true;
+        $("#site-icon").href = dataUrl;
+      }
+
+      $("#logo-file").addEventListener("change", (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        if (file.size > 1024 * 1024) {
+          alert("Please choose a logo smaller than 1 MB.");
+          event.target.value = "";
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = String(reader.result);
+          try {
+            localStorage.setItem("plantjarvis-logo", dataUrl);
+            applyLogo(dataUrl);
+          } catch {
+            alert("The logo could not be saved in this browser. Try a smaller image.");
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+
+      const dialog = $("#add-dialog");
+      $("#add-open").addEventListener("click", () => dialog.showModal());
+      $("#close-dialog").addEventListener("click", () => {
+        stopScanner();
+        dialog.close();
+      });
+      $("#back-button").addEventListener("click", () => {
+        $("#detail-screen").hidden = true;
+        $("#home-screen").hidden = false;
+      });
+
+      function stopScanner() {
+        scanActive = false;
+        if (cameraStream) cameraStream.getTracks().forEach((track) => track.stop());
+        cameraStream = null;
+        $("#qr-video").hidden = true;
+      }
+
+      $("#scan-button").addEventListener("click", async () => {
+        const video = $("#qr-video");
+        if (!("BarcodeDetector" in window)) {
+          $("#form-message").textContent = "QR scanning is not supported in this browser. Enter the device ID manually.";
+          return;
+        }
+        try {
+          cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+          video.srcObject = cameraStream;
+          video.hidden = false;
+          await video.play();
+          scanActive = true;
+          const detector = new BarcodeDetector({ formats: ["qr_code"] });
+          $("#form-message").textContent = "Point the camera at the pot’s QR code.";
+          const scan = async () => {
+            if (!scanActive) return;
+            try {
+              const codes = await detector.detect(video);
+              if (codes.length) {
+                let result = codes[0].rawValue.trim();
+                try {
+                  const parsed = new URL(result);
+                  result = parsed.searchParams.get("device_id") || parsed.searchParams.get("id") || parsed.searchParams.get("t") || result;
+                } catch {}
+                $("#new-device").value = result;
+                $("#form-message").textContent = "QR code scanned.";
+                stopScanner();
+                return;
+              }
+            } catch {}
+            if (scanActive) requestAnimationFrame(scan);
+          };
+          requestAnimationFrame(scan);
+        } catch (error) {
+          console.error(error);
+          $("#form-message").textContent = "Could not access the camera. Allow camera permission or enter the ID manually.";
+          stopScanner();
+        }
+      });
+
+      $("#add-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const save = $("#save-pot");
+        const message = $("#form-message");
+        const name = $("#new-name").value.trim();
+        const plant = $("#new-plant").value.trim();
+        const deviceId = $("#new-device").value.trim();
+        if (!name || !deviceId) {
+          message.textContent = "Enter a pot name and device ID.";
+          return;
+        }
+
+        save.disabled = true;
+        message.textContent = "Adding your pot…";
+        try {
+          const response = await fetch(`${SUPABASE_URL}/rest/v1/${POT_TABLE}`, {
+            method: "POST",
+            headers: {
+              apikey: SUPABASE_PUBLISHABLE_KEY,
+              "Content-Type": "application/json",
+              Prefer: "return=minimal"
+            },
+            body: JSON.stringify({ name, device_id: deviceId, pflanze: plant || null })
+          });
+          if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+          stopScanner();
+          $("#add-form").reset();
+          dialog.close();
+          await loadPlants();
+          $("#home-screen").hidden = false;
+          $("#detail-screen").hidden = true;
+        } catch (error) {
+          console.error(error);
+          message.textContent = "Could not add the pot. Check the table name, column names, and Supabase INSERT permissions.";
+        } finally {
+          save.disabled = false;
+        }
+      });
+
+      dialog.addEventListener("click", (event) => {
+        if (event.target === dialog) {
+          stopScanner();
+          dialog.close();
+        }
+      });
+
+      restoreLogo();
+      loadPlants();
+      setInterval(loadPlants, 60000);
+    </script>
   </body>
 </html>
 
 <style>
   :global(*) { box-sizing: border-box; }
-  :global(body) {
-    margin: 0; padding: 32px 18px; min-height: 100vh;
-    background: #f3f7ef; color: #203629;
-    font-family: system-ui, sans-serif;
-  }
-  main { max-width: 900px; margin: 0 auto; }
-  header, .brand, .plant-head, footer {
-    display: flex; justify-content: space-between; align-items: center; gap: 18px;
-  }
-  header { margin-bottom: 28px; }
-  .brand { justify-content: flex-start; font-size: 34px; }
+  :global(body) { margin: 0; padding: 30px 18px; min-height: 100vh; background: #f3f7ef; color: #203629; font-family: system-ui, sans-serif; }
+  :global(button), :global(input) { font: inherit; }
+  [hidden] { display: none !important; }
+  main { max-width: 1000px; margin: 0 auto; }
+  .topbar, .brand, .header-actions, .intro, .plant-head, footer, .dialog-head, .device-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .topbar { margin-bottom: 42px; }
+  .brand { justify-content: flex-start; }
+  .brand-logo { width: 54px; height: 54px; object-fit: contain; border-radius: 12px; }
+  .brand-leaf { font-size: 42px; }
   h1, h2, p { margin: 0; }
   h1 { font-size: 27px; }
-  .brand p, .muted { color: #718074; margin-top: 5px; font-size: 14px; }
-  .date { text-align: right; color: #54715c; line-height: 1.7; }
-  .card {
-    background: white; border: 1px solid #e2eadf; border-radius: 24px;
-    padding: 30px; box-shadow: 0 12px 36px #26462b12;
-  }
+  .brand p, .muted { color: #718074; margin-top: 5px; }
+  .button, .upload-button { border: 0; border-radius: 12px; padding: 12px 16px; background: #38734e; color: white; cursor: pointer; font-weight: 650; }
+  .upload-button { background: #e5eee1; color: #315f40; }
+  .button:hover { background: #2c5d3e; }
+  .button:disabled { opacity: .6; cursor: wait; }
+  .intro { margin-bottom: 24px; }
+  .eyebrow { margin-bottom: 7px; color: #6b886d; font-size: 12px; font-weight: 750; letter-spacing: 1.4px; }
+  h2 { font-size: clamp(25px, 4vw, 34px); }
+  .date-box { text-align: right; color: #54715c; line-height: 1.7; }
+  .message { color: #68796c; padding: 15px 0; }
+  .plant-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .plant-tile { display: flex; align-items: center; gap: 16px; width: 100%; padding: 20px; text-align: left; border: 1px solid #e2eadf; border-radius: 18px; background: white; color: #203629; cursor: pointer; box-shadow: 0 8px 24px #26462b0a; }
+  .plant-tile:hover { border-color: #82a982; transform: translateY(-1px); }
+  .plant-tile.critical { animation: critical-blink 1s infinite; border-color: #c83131; }
+  .tile-icon { font-size: 32px; }
+  .tile-info { display: grid; gap: 5px; flex: 1; min-width: 0; }
+  .tile-info strong { font-size: 18px; }
+  .tile-info small { color: #718074; overflow-wrap: anywhere; }
+  .tile-status, .status { padding: 8px 11px; border-radius: 99px; background: #e9f5e7; color: #347044; font-size: 12px; font-weight: 750; white-space: nowrap; }
+  .tile-status.warning, .status.warning { background: #fff2d9; color: #8a5a00; }
+  .tile-status.critical, .status.critical { background: #c83131; color: white; }
+  .detail-screen { margin-top: 10px; }
+  .back-button { margin: 0 0 14px; padding: 8px 0; border: 0; background: transparent; color: #38734e; cursor: pointer; font-weight: 700; }
+  .detail-card { padding: 30px; background: white; border: 1px solid #e2eadf; border-radius: 24px; box-shadow: 0 12px 36px #26462b12; }
+  .detail-card.critical { animation: critical-blink 1s infinite; }
   .plant-head { padding-bottom: 22px; border-bottom: 1px solid #e8eee5; }
-  .eyebrow { color: #6b886d; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; margin-bottom: 7px; }
-  h2 { font-size: 32px; }
-  .status { background: #e9f5e7; color: #347044; border-radius: 99px; padding: 10px 14px; white-space: nowrap; }
-  .message { color: #647568; padding: 18px 0 0; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0 26px; }
-  .reading { background: #f8faf6; border-radius: 16px; padding: 20px; }
-  .reading-title { color: #718074; }
-  .reading-value { font-size: 27px; font-weight: 700; margin: 9px 0 14px; }
-  .unit { font-size: 15px; color: #718074; font-weight: 500; }
-  .gauge { height: 12px; background: #e4eadf; border-radius: 20px; position: relative; margin: 12px 0 10px; }
-  .target { position: absolute; height: 100%; background: #cfe2c8; border-radius: 20px; }
+  .readings { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0 26px; }
+  .reading { padding: 20px; border-radius: 16px; background: #f8faf6; }
+  .reading.out-of-range { border: 1px solid #e2a1a1; }
+  .reading-label { color: #718074; }
+  .reading-value { margin: 8px 0 14px; font-size: 27px; font-weight: 750; }
+  .gauge { position: relative; height: 12px; margin: 12px 0 10px; border-radius: 20px; background: #e4eadf; }
+  .target { position: absolute; height: 100%; border-radius: 20px; background: #cfe2c8; }
   .marker { position: absolute; top: -4px; width: 20px; height: 20px; border: 3px solid white; border-radius: 50%; background: #43804d; box-shadow: 0 0 0 1px #43804d; transform: translateX(-50%); }
-  .bad .marker { background: #c64b3d; box-shadow: 0 0 0 1px #c64b3d; }
-  .range { color: #718071; font-size: 13px; }
+  .out-of-range .marker { background: #c64b3d; box-shadow: 0 0 0 1px #c64b3d; }
+  .reading small { color: #718071; }
   footer { border-top: 1px solid #e6ece3; padding-top: 18px; color: #54715c; flex-wrap: wrap; }
-  @media (max-width: 600px) {
+  .small-note { margin-top: 24px; text-align: center; color: #829084; font-size: 13px; }
+  dialog { width: min(560px, calc(100% - 28px)); padding: 26px; border: 1px solid #dfe8dc; border-radius: 22px; color: #203629; box-shadow: 0 24px 80px #17291c44; }
+  dialog::backdrop { background: #14201888; }
+  .dialog-head { margin-bottom: 22px; }
+  .close-button { border: 0; background: transparent; font-size: 30px; cursor: pointer; color: #617164; }
+  form > label { display: block; margin: 14px 0 7px; font-weight: 650; }
+  form input { width: 100%; padding: 12px; border: 1px solid #ccd8ca; border-radius: 10px; background: white; color: #203629; }
+  .device-row input { min-width: 0; }
+  .secondary { flex: 0 0 auto; background: #e5eee1; color: #315f40; }
+  .form-message { min-height: 24px; margin: 11px 0; color: #68796c; font-size: 14px; }
+  #qr-video { width: 100%; max-height: 260px; object-fit: cover; margin-top: 10px; border-radius: 12px; background: #17291c; }
+  .save-button { width: 100%; margin-top: 8px; }
+  @keyframes critical-blink {
+    0%, 100% { background-color: white; box-shadow: 0 0 0 2px #d52626; }
+    50% { background-color: #ffe1e1; box-shadow: 0 0 0 5px #d52626; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+  }
+  @media (max-width: 650px) {
     :global(body) { padding: 22px 13px; }
-    header, .plant-head { align-items: flex-start; flex-direction: column; }
-    .date { text-align: left; }
-    .grid { grid-template-columns: 1fr; }
-    .card { padding: 21px; }
+    .topbar, .intro, .plant-head { align-items: flex-start; flex-direction: column; }
+    .header-actions { width: 100%; flex-wrap: wrap; }
+    .date-box { text-align: left; }
+    .plant-list, .readings { grid-template-columns: 1fr; }
+    .detail-card { padding: 21px; }
   }
 </style>
-
-<script>
-  const url = "https://dzvzbvylebefxdhosisi.supabase.co";
-  const key = "sb_publishable_GC1g6g1Wl4V18vX44-9fMw_LHisOABS";
-
-  const dateEl = document.querySelector("#date")!;
-  const seasonEl = document.querySelector("#season")!;
-  const messageEl = document.querySelector("#message")!;
-  const readingsEl = document.querySelector("#readings")!;
-
-  function showDateAndSeason() {
-    const now = new Date();
-    dateEl.textContent = now.toLocaleDateString(undefined, {
-      weekday: "long", year: "numeric", month: "long", day: "numeric"
-    });
-
-    const month = now.getMonth();
-    const season =
-      month >= 2 && month <= 4 ? "Spring" :
-      month >= 5 && month <= 7 ? "Summer" :
-      month >= 8 && month <= 10 ? "Autumn" : "Winter";
-
-    seasonEl.textContent = `Season: ${season}`;
-    document.querySelector("#refreshed")!.textContent =
-      `Page loaded: ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-  }
-
-  function number(value: unknown): number | null {
-    if (value === null || value === undefined || value === "") return null;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  function addReading(label: string, value: unknown, unit: string, lowValue: unknown, highValue: unknown, decimals = 0) {
-    const low = number(lowValue);
-    const high = number(highValue);
-    const current = number(value);
-
-    const article = document.createElement("article");
-    article.className = "reading";
-
-    const title = document.createElement("div");
-    title.className = "reading-title";
-    title.textContent = label;
-
-    const shownValue = document.createElement("div");
-    shownValue.className = "reading-value";
-    shownValue.textContent = current === null ? "—" : `${current.toFixed(decimals)} ${unit}`;
-
-    const gauge = document.createElement("div");
-    gauge.className = "gauge";
-
-    const target = document.createElement("div");
-    target.className = "target";
-
-    const marker = document.createElement("div");
-    marker.className = "marker";
-
-    const range = document.createElement("div");
-    range.className = "range";
-
-    if (low !== null && high !== null && high > low) {
-      const span = high - low;
-      const axisMin = low - span * 0.5;
-      const axisMax = high + span * 0.5;
-      const targetLeft = ((low - axisMin) / (axisMax - axisMin)) * 100;
-      const targetWidth = ((high - low) / (axisMax - axisMin)) * 100;
-
-      target.style.left = `${targetLeft}%`;
-      target.style.width = `${targetWidth}%`;
-      gauge.append(target);
-
-      if (current !== null) {
-        const position = Math.max(0, Math.min(100, ((current - axisMin) / (axisMax - axisMin)) * 100));
-        marker.style.left = `${position}%`;
-        gauge.append(marker);
-        if (current < low || current > high) article.classList.add("bad");
-      }
-
-      range.textContent = `Target: ${low}–${high} ${unit}`;
-    } else {
-      range.textContent = "Target range unavailable";
-    }
-
-    article.append(title, shownValue, gauge, range);
-    readingsEl.append(article);
-  }
-
-  function setText(selector: string, value: string) {
-    document.querySelector(selector)!.textContent = value;
-  }
-
-  async function loadPlant() {
-    showDateAndSeason();
-
-    if (!url || !key) {
-      messageEl.textContent = "Supabase settings are missing. Add the two PUBLIC_ variables in Cloudflare, then redeploy.";
-      return;
-    }
-
-    try {
-      const endpoint = `${url.replace(/\/$/, "")}/rest/v1/v_base_station?select=*&order=name.asc&limit=1`;
-      const response = await fetch(endpoint, { headers: { apikey: key } });
-
-      if (!response.ok) {
-        const details = await response.text();
-        throw new Error(`Supabase returned ${response.status}: ${details}`);
-      }
-
-      const rows = await response.json();
-      if (!rows.length) {
-        messageEl.textContent = "No plant is visible. Check the view and its read permissions.";
-        return;
-      }
-
-      const p = rows[0];
-      const plantName = p.pflanze || p.name || "Plant";
-      setText("#plant", plantName);
-      setText("#pot-name", p.name ? `Pot: ${p.name}` : "");
-      messageEl.textContent = "";
-
-      const month = new Date().getMonth() + 1;
-      const winter = month >= 11 || month <= 3;
-      const tempMin = winter ? p.temp_min_winter ?? p.temp_min : p.temp_min;
-      const tempMax = winter ? p.temp_max_winter ?? p.temp_max : p.temp_max;
-      const soilMin = winter ? 0 : p.soil_min;
-      const soilMax = winter ? p.soil_max_winter ?? p.soil_max : p.soil_max;
-
-      readingsEl.replaceChildren();
-      addReading("Temperature", p.temperature, "°C", tempMin, tempMax, 1);
-      addReading("Air humidity", p.humidity, "%", p.humidity_min, p.humidity_max);
-      addReading("Light", p.light, "lx", p.light_min, p.light_max);
-      addReading("Soil moisture", p.soil_moisture, "%", soilMin, soilMax);
-
-      const age = number(p.age_min);
-      if (age === null || age < 0) {
-        setText("#updated", "Last measurement: time unavailable");
-      } else {
-        const measured = new Date(Date.now() - age * 60_000);
-        setText("#updated", `Last measurement: ${measured.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} (about ${age} min ago)`);
-      }
-
-      const outside = [p.temperature < tempMin || p.temperature > tempMax,
-                       p.humidity < p.humidity_min || p.humidity > p.humidity_max,
-                       p.soil_moisture < soilMin || p.soil_moisture > soilMax].some(Boolean);
-
-      setText("#status", outside ? "● Check plant" : "● Looking good");
-    } catch (error) {
-      console.error(error);
-      messageEl.textContent = "Could not load plant data. Check the browser console and Supabase read permissions.";
-      setText("#status", "Connection error");
-    }
-  }
-
-  loadPlant();
-  setInterval(loadPlant, 60_000);
-</script>
